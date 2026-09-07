@@ -80,6 +80,19 @@ Four layers, in `src/**/*.test.ts`:
   optional `by`, so the host awards either half; that is the whole cost of the fallback.
 - **STUN cannot fix symmetric or carrier-grade NAT** — only a TURN relay can, and there is
   no server. So the connection must time out and offer split screen, never hang.
+- **Terrain is a list of features, not noise.** That is what makes `perturb` an operation:
+  reseeding noise changes everything at once, which is a different map rather than a
+  sibling. Landform falloff has **compact support** for the same reason — a Gaussian would
+  make every local change global.
+- **Feature sizes are metres, not fractions of the map.** A drill can look at any window;
+  sized as a fraction, a marsh drawn for a 420 m map covered most of a 110 m pexeso crop.
+- **Area kinds are weighted toward white forest.** On ISOM the ground is white and the rest
+  is exception; picking the four kinds uniformly filled every card edge to edge.
+- **`MapView` culls to the window.** SVG would clip anyway, but a pexeso board is twelve
+  crops of one map and the full trace is 150+ contour paths each — culling took a card
+  from 152 elements to 9.
+- **Perturbing for a contour drill must target a landform.** Moving a boulder changes the
+  map and not the relief, so any other target makes a distractor identical to the answer.
 
 ## Verify
 
