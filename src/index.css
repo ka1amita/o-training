@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #1c1917;
+  --color-ink-soft: #292524;
+  --color-line: #44403c;
+  --color-paper: #fafaf9;
+  --color-muted: #a8a29e;
+  --color-flag: #ea580c;
+  --color-good: #65a30d;
+  --color-bad: #dc2626;
+}
+
+html {
+  background: var(--color-ink);
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Drills are tapped fast and repeatedly; a text selection or a double-tap zoom in the
+     middle of a round is never what was meant. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  touch-action: manipulation;
+}
