@@ -16,7 +16,7 @@ npm install && npm run dev
 | | |
 |---|---|
 | Match Madness | IOF control-description symbols against the clock |
-| Dohledávka | Dobble: two cards, one shared symbol, first tap wins |
+| Dohledávka | Dobble: two cards, one shared symbol, first tap wins. Two players, on one device or over a link |
 | Posunuté pexeso | Pairs are two offset crops of one map sharing a control feature |
 | Contours → relief | Pick the hillshade the contours describe |
 | Map memory | A map crop, briefly, then four candidates |
@@ -30,10 +30,14 @@ Stored on your device: a level per drill and a list of finished sessions
 (`{timestamp, responseMs, correct}`). Nothing else — no name, no identifier, no telemetry.
 Erase it all from the Progress screen.
 
-**One exception worth knowing:** playing Dohledávka against someone opens a direct
+**One exception worth knowing:** playing Dohledávka over a link opens a direct
 peer-to-peer connection, and that **discloses your IP address to the other player**.
 Nothing is stored and nothing passes through a server — that is inherent to a serverless
 connection, not a choice made here. Same-device split screen has no such caveat.
+
+Some networks — mobile data especially — will not allow a direct connection at all, and
+fixing that needs a relay server this app does not have. It says so and offers the
+same-device game instead.
 
 ## Licence note
 

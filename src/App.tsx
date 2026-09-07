@@ -2,6 +2,7 @@ import { Route, Switch, Link } from 'wouter';
 import { useHashLocation } from 'wouter/use-hash-location';
 import Home from './pages/Home.tsx';
 import DrillPage from './pages/DrillPage.tsx';
+import MatchPage from './pages/MatchPage.tsx';
 import Progress from './pages/Progress.tsx';
 import { Router } from 'wouter';
 
@@ -26,6 +27,8 @@ export default function App() {
           <Switch>
             <Route path="/" component={Home} />
             <Route path="/drill/:id" component={DrillPage} />
+            <Route path="/match" component={MatchPage} />
+            <Route path="/match/join/:code" component={MatchPage} />
             <Route path="/progress" component={Progress} />
             <Route>
               <p className="pt-10 text-center text-muted">Nothing here.</p>

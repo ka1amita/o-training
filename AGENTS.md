@@ -66,6 +66,20 @@ Four layers, in `src/**/*.test.ts`:
 - **Dobble symbol size is derived from the layout geometry, never chosen.** `layoutFor`
   solves for the largest scale that cannot overlap at the worst combination of jitters.
   Hand-picked sizes were tried first and the property test rejected them within ten cases.
+- **Only taps cross the wire.** Both peers derive the deck from the seed in `hello`, which
+  is why the golden determinism tests are load-bearing: output drifting between builds
+  would desynchronise a game with nothing on screen to say so.
+- **The host decides every outcome.** Without one authority both peers see their own tap
+  as first and the screens disagree. The joiner pays a little latency for that.
+- **A joiner must return its answer before its data channel exists.** The channel only
+  opens once the host has the answer, so waiting for it first is a deadlock that looks
+  exactly like a peer who never replied. `makeTransport` attaches the channel late.
+- **`trimSdp`'s `(:|$)` is load-bearing** — without it `extmap` also matches the
+  session-level `a=extmap-allow-mixed`, which is not an extmap at all.
+- **Split screen is the same rules, not a second implementation.** `found` carries an
+  optional `by`, so the host awards either half; that is the whole cost of the fallback.
+- **STUN cannot fix symmetric or carrier-grade NAT** — only a TURN relay can, and there is
+  no server. So the connection must time out and offer split screen, never hang.
 
 ## Verify
 

@@ -24,14 +24,17 @@ export default function Home() {
               >
                 <span className="flex items-baseline justify-between gap-3">
                   <span className="font-semibold">{drill.title}</span>
-                  {drill.multiplayer && (
-                    <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-xs text-muted">
-                      2 players
-                    </span>
-                  )}
                 </span>
                 <span className="mt-1 block text-sm text-muted">{drill.blurb}</span>
               </Link>
+              {drill.multiplayer && (
+                <Link
+                  href="/match"
+                  className="mt-2 block rounded-xl border border-dashed border-line px-4 py-2 text-center text-sm text-muted no-underline hover:border-flag hover:text-paper"
+                >
+                  Play {drill.title} against someone
+                </Link>
+              )}
             </li>
           ))}
         </ul>
