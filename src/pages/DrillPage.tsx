@@ -128,7 +128,10 @@ function RunningSession({ drill, startLevel }: { drill: AnyDrill; startLevel: nu
         <span>lvl {level}</span>
         {state.streak >= 2 && <span className="text-flag">×{state.streak}</span>}
       </div>
-      <drill.Play round={round} level={level} onDone={onDone} />
+      {/* Keyed by round: Play holds per-round state (what is matched, whether it has
+          reported) in refs, and without a fresh instance the second round would start
+          already finished. */}
+      <drill.Play key={state.index} round={round} level={level} onDone={onDone} />
     </div>
   );
 }

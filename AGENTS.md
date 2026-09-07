@@ -26,8 +26,14 @@ Four layers, in `src/**/*.test.ts`:
    **exactly one correct answer exists** — a round with two is unfair and invisible while
    playing. `wellFormed()` is also checked at runtime in dev.
 2. **Golden determinism.** One seed, one round, pinned by hash.
-3. **Reducers.** `session.ts` and the netcode take timestamps as event fields, so tests
-   need no fake timers.
+3. **Reducers.** `session.ts`, each drill's interaction rules, and the netcode take
+   timestamps as event fields, so tests need no fake timers.
+
+   A drill's tap rules go in its own `state.ts` as `(round, state, event) => state`, not
+   in `Play`. Match Madness had them in the component first, reading `selected` and
+   `matched` out of a closure — two taps landing before a re-render both saw the same
+   stale state and the round could not finish. A reducer cannot have that bug, and
+   `useReducer` queues dispatches so a batch resolves in order.
 4. **Not tested: rendering.** Checked by eye. Safe only because of the rule above.
 
 ## Non-obvious
@@ -39,8 +45,19 @@ Four layers, in `src/**/*.test.ts`:
 - **Session response times are medians, not means.** One round where the phone was put
   down would otherwise hide the trend.
 - **The staircase resets its run on advancing**, so six correct is two levels, not four.
+- **`DrillPage` keys `Play` on the round index.** Play holds per-round state in the
+  reducer, and without a fresh instance the second round starts already finished.
 - **Icons are generated** by `node scripts/make-icons.mjs` — no image library on the
-  machine and none worth adding for two files.
+  machine and none worth adding for two files. Symbols likewise, by
+  `node scripts/build-symbols.mjs`; both outputs are committed, so neither package is a
+  runtime dependency.
+- **Only IOF column D is used** — the feature column. Columns C/E/F/G are modifiers and
+  directions ("North-east side"), which would flood the pool with near-identical glyphs.
+  Duplicate English names are dropped: two symbols sharing a meaning is the one thing
+  that makes a round unanswerable.
+- **Same-category rounds are the real difficulty knob** above level 3. More pairs is only
+  more scanning; spur against re-entrant is the discrimination the sport asks for. The
+  grouping comes from the IOF numbering, so it is read from data, not maintained by hand.
 
 ## Verify
 
