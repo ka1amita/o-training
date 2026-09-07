@@ -58,6 +58,14 @@ Four layers, in `src/**/*.test.ts`:
 - **Same-category rounds are the real difficulty knob** above level 3. More pairs is only
   more scanning; spur against re-entrant is the discrimination the sport asks for. The
   grouping comes from the IOF numbering, so it is read from data, not maintained by hand.
+- **A Dobble deck is a finite projective plane, and the order must be prime.** The
+  construction in `dohledavka/deck.ts` uses arithmetic mod the order; a prime *power* like
+  4 or 9 has a plane but not one this finds. Measured: at order 4, 16 of 210 card pairs
+  share no symbol and 16 share two. That is a card with no answer or two, not a crash,
+  so `buildDeck` refuses rather than trusting the caller.
+- **Dobble symbol size is derived from the layout geometry, never chosen.** `layoutFor`
+  solves for the largest scale that cannot overlap at the worst combination of jitters.
+  Hand-picked sizes were tried first and the property test rejected them within ten cases.
 
 ## Verify
 
