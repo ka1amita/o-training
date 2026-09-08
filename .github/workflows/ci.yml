@@ -22,9 +22,9 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '26'
           cache: npm
@@ -39,7 +39,7 @@ jobs:
       # gets verified has to be the build that ships, so this is `build:pages`, not `build`.
       - run: npm run build:pages
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist
@@ -55,7 +55,7 @@ jobs:
       name: production
       url: https://www.matejkala.com/ob-training/
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
