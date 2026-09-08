@@ -64,32 +64,37 @@ export default function Play({ round, onDone }: PlayProps<MatchRound, MatchAnswe
         />
       </div>
 
-      <div className="grid flex-1 grid-cols-2 items-start gap-3">
-        <ul className="m-0 flex list-none flex-col gap-3 p-0">
-          {round.symbolOrder.map((id) => (
-            <li key={id}>
-              <Tile
-                state={stateOf('symbol', id)}
-                onClick={() => dispatch({ type: 'tap', kind: 'symbol', value: id })}
-              >
-                <Glyph id={id} className="mx-auto h-12 w-12" />
-              </Tile>
-            </li>
-          ))}
-        </ul>
-        <ul className="m-0 flex list-none flex-col gap-3 p-0">
-          {round.nameOrder.map((name) => (
-            <li key={name}>
-              <Tile
-                state={stateOf('name', name)}
-                onClick={() => dispatch({ type: 'tap', kind: 'name', value: name })}
-              >
-                <span className="block text-sm leading-tight">{name}</span>
-              </Tile>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {/* One grid, not two columns. A pictogram tile is taller than a one-line name, so
+          two independently stacked lists drift a further row apart with every pair.
+          Column flow keeps the DOM in reading order — every symbol, then every name —
+          while the shared row tracks make the two tiles of a row exactly as tall as the
+          taller of them. The board is capped well short of the page: matching is a scan
+          across, and full-width columns make the eye travel for nothing. */}
+      <ul
+        className="mx-auto my-0 grid w-full max-w-md flex-1 list-none grid-flow-col grid-cols-2 content-center gap-3 p-0"
+        style={{ gridTemplateRows: `repeat(${round.symbolOrder.length}, auto)` }}
+      >
+        {round.symbolOrder.map((id) => (
+          <li key={id} className="flex">
+            <Tile
+              state={stateOf('symbol', id)}
+              onClick={() => dispatch({ type: 'tap', kind: 'symbol', value: id })}
+            >
+              <Glyph id={id} className="h-12 w-12" />
+            </Tile>
+          </li>
+        ))}
+        {round.nameOrder.map((name) => (
+          <li key={name} className="flex">
+            <Tile
+              state={stateOf('name', name)}
+              onClick={() => dispatch({ type: 'tap', kind: 'name', value: name })}
+            >
+              <span className="block text-sm leading-tight">{name}</span>
+            </Tile>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
