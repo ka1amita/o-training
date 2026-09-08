@@ -30,7 +30,11 @@ about session seven and then flattening.
 
 ## Deploy
 
-Live at <https://ka1amita.github.io/ob-training/>.
+Live at <https://www.matejkala.com/ob-training/>.
+
+(The user site's custom domain applies to project pages too, so
+`ka1amita.github.io/ob-training/` redirects there. The `/ob-training/` subpath — which
+`base` has to match — is the same either way.)
 
 ```bash
 npm run deploy
