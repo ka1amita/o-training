@@ -96,7 +96,7 @@ describe('contours / generate', () => {
   });
 
   it('golden: fixed seeds at fixed levels', () => {
-    expect(hashJson([1, 2].flatMap((s) => [1, 5, 10].map((l) => gen(s, l))))).toMatchInlineSnapshot(`"c7486995"`);
+    expect(hashJson([1, 2].flatMap((s) => [1, 5, 10].map((l) => gen(s, l))))).toMatchInlineSnapshot(`"a113ab49"`);
   });
 });
 
@@ -216,6 +216,6 @@ describe('map memory / generate', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     expect(hashJson([1, 2].flatMap((s) => [1, 5, 10].map((l) => memGen(s, l)))))
-      .toMatchInlineSnapshot(`"765fc6bd"`);
+      .toMatchInlineSnapshot(`"d35b1a7a"`);
   });
 });

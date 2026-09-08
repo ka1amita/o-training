@@ -98,9 +98,31 @@ export function seeded(seed: number): Rng {
   return rng;
 }
 
+/**
+ * Six decimals. Terrain geometry reaches a golden as raw doubles, and `Math.hypot`, `sin`
+ * and `cos` are *implementation-approximated* — the spec lets a conforming engine return a
+ * different last bit. An unrounded hash therefore pins the engine that wrote it rather than
+ * the generator, and did: the pexeso golden passed on darwin/arm64 and failed on CI's
+ * linux/x64, same seeds, same structure, different float noise.
+ *
+ * The grid is solved for, not picked. Drift across a round measures 1.1e-13 m at the worst
+ * number, seven orders under a micron, so rounding absorbs it with room to spare while
+ * staying far finer than any change to generation could be. Wider would be safer still
+ * against a value landing on a rounding boundary — at 1e-6 that is about one run in 40000 —
+ * but would start to hide real movement.
+ */
+const quantise = (value: unknown): unknown => {
+  if (typeof value === 'number') return Math.round(value * 1e6) / 1e6;
+  if (Array.isArray(value)) return value.map(quantise);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, quantise(v)]));
+  }
+  return value;
+};
+
 /** A stable structural hash, for golden tests that pin generator output. */
 export function hashJson(value: unknown): string {
-  const text = JSON.stringify(value);
+  const text = JSON.stringify(quantise(value));
   // FNV-1a, 32-bit.
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {

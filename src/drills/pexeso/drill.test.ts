@@ -100,7 +100,7 @@ describe('pexeso / generate', () => {
   });
 
   it('golden: fixed seeds at fixed levels', () => {
-    expect(hashJson([1, 2].flatMap((s) => [1, 6, 10].map((l) => gen(s, l))))).toMatchInlineSnapshot(`"5cf24957"`);
+    expect(hashJson([1, 2].flatMap((s) => [1, 6, 10].map((l) => gen(s, l))))).toMatchInlineSnapshot(`"b68e7404"`);
   });
 });
 

@@ -130,7 +130,7 @@ describe('dohledavka / determinism', () => {
   // a shared seed rather than sending it, so output drifting would desynchronise a game.
   it('golden: fixed seeds at fixed levels', () => {
     const rounds = [1, 2, 3].flatMap((s) => [1, 5, 9].map((l) => gen(s, l)));
-    expect(hashJson(rounds)).toMatchInlineSnapshot(`"a09cda69"`);
+    expect(hashJson(rounds)).toMatchInlineSnapshot(`"45b27b51"`);
   });
 });
 

@@ -153,7 +153,7 @@ describe('terrain / generate', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     const terrains = [1, 2, 3].flatMap((s) => [1, 5, 9].map((l) => make(s, l)));
-    expect(hashJson(terrains)).toMatchInlineSnapshot(`"863f6f87"`);
+    expect(hashJson(terrains)).toMatchInlineSnapshot(`"3e60ac3f"`);
   });
 });
 
