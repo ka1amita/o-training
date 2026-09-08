@@ -36,6 +36,8 @@ export interface MapViewProps {
   /** Draws a control circle here. */
   readonly control?: Vec;
   readonly contourInterval?: number;
+  /** Brown lines on white and nothing else, for the drill about reading relief. */
+  readonly contoursOnly?: boolean;
   readonly className?: string;
 }
 
@@ -67,6 +69,7 @@ export default function MapView({
   crop,
   control,
   contourInterval = 5,
+  contoursOnly = false,
   className,
 }: MapViewProps) {
   const window_ = crop ?? { x: 0, y: 0, size: terrain.size };
@@ -121,7 +124,7 @@ export default function MapView({
     >
       <rect x={window_.x} y={window_.y} width={window_.size} height={window_.size} fill={ISOM.ground} />
 
-      {visible.areas.map((area, i) => (
+      {!contoursOnly && visible.areas.map((area, i) => (
         <Area key={i} area={area} unit={unit} />
       ))}
 
@@ -137,11 +140,11 @@ export default function MapView({
         />
       ))}
 
-      {visible.lines.map((line, i) => (
+      {!contoursOnly && visible.lines.map((line, i) => (
         <Line key={i} line={line} unit={unit} />
       ))}
 
-      {visible.points.map((p, i) => (
+      {!contoursOnly && visible.points.map((p, i) => (
         <Point key={i} point={p} unit={unit} />
       ))}
 

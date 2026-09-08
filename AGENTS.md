@@ -93,6 +93,16 @@ Four layers, in `src/**/*.test.ts`:
   from 152 elements to 9.
 - **Perturbing for a contour drill must target a landform.** Moving a boulder changes the
   map and not the relief, so any other target makes a distractor identical to the answer.
+  For map memory the constraint is different: the move must land **inside the window**, or
+  two candidates are identical and the round has two right answers.
+- **Right and wrong are never signalled by colour alone.** Measured, not assumed: the
+  green and red in use are ΔE 5.8 apart under deuteranopia, well under the 8 that counts
+  as separable, and about one man in twelve has some red-green deficiency. Three drills
+  did exactly that until `Verdict` put a tick or a cross beside the colour.
+- **The progress chart is one series on one axis.** Accuracy sits in the stat tiles rather
+  than on a second y-scale — two scales on one frame let the reader read off whatever
+  relationship the scaling suggests. Median response time is the series because it is the
+  number the training literature says moves.
 
 ## Verify
 

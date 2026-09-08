@@ -18,11 +18,15 @@ npm install && npm run dev
 | Match Madness | IOF control-description symbols against the clock |
 | Dohledávka | Dobble: two cards, one shared symbol, first tap wins. Two players, on one device or over a link |
 | Posunuté pexeso | Pairs are two offset crops of one map sharing a control. Match by recognising the ground |
-| Contours → relief | Pick the hillshade the contours describe |
-| Map memory | A map crop, briefly, then four candidates |
+| Contours → relief | Read the brown lines, then pick the ground they describe |
+| Map memory | A map extract, briefly. Then pick the one you saw |
 
 Difficulty follows a 3-down-1-up staircase: three correct moves you up, one miss moves you
 down. It settles where you are right about 79% of the time.
+
+Progress tracks **median response time per session** — the number a 2026 study on the
+Danish elite squad found falling 27% over six weeks of this kind of work, steeply through
+about session seven and then flattening.
 
 ## Privacy
 
