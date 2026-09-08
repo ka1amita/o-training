@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import {
   generateTerrain, paramsFor, perturb, readGround, suitsArea, suitsPoint,
-  MIN_POINT_SEPARATION, type Terrain,
+  separationOf, MIN_POINT_SEPARATION, type Terrain,
 } from './terrain.ts';
 import { contributionOf, heightAt, maxHeightDifference, sampleGrid } from './height.ts';
 import { contoursOf, marchingSquares, stitch } from './contours.ts';
@@ -40,19 +40,38 @@ describe('terrain / generate', () => {
 
   it('never puts two point features on top of each other', () => {
     // Two boulders 3 m apart print as one blob, and a drill about noticing detail cannot
-    // be built on a map that cannot be read.
+    // be built on a map that cannot be read. The bar is per pair, because a crag is a line
+    // twice as long as a boulder is wide and a field of them needs the room.
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const { points } = make(seed, level);
         for (let i = 0; i < points.length; i++) {
           for (let j = i + 1; j < points.length; j++) {
-            const gap = Math.hypot(points[i]!.x - points[j]!.x, points[i]!.y - points[j]!.y);
+            const a = points[i]!;
+            const b = points[j]!;
+            const gap = Math.hypot(a.x - b.x, a.y - b.y);
+            expect(gap, `${a.kind} and ${b.kind}`).toBeGreaterThanOrEqual(separationOf(a, b));
             expect(gap).toBeGreaterThanOrEqual(MIN_POINT_SEPARATION);
           }
         }
       }),
       { numRuns: 200 },
     );
+  });
+
+  it('advertises a floor no pair of symbols can undercut', () => {
+    // `MIN_POINT_SEPARATION` is a constant others may reason with; `separationOf` is what
+    // placement enforces. If the two drift apart the constant becomes a lie.
+    const kinds = ['boulder', 'knoll', 'pit', 'tree', 'crag'] as const;
+    for (const a of kinds) {
+      for (const b of kinds) {
+        const gap = separationOf(
+          { kind: a, x: 0, y: 0, size: 3 },
+          { kind: b, x: 0, y: 0, size: 3 },
+        );
+        expect(gap, `${a} and ${b}`).toBeGreaterThanOrEqual(MIN_POINT_SEPARATION);
+      }
+    }
   });
 
   it('gets busier with the level', () => {
@@ -153,7 +172,7 @@ describe('terrain / generate', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     const terrains = [1, 2, 3].flatMap((s) => [1, 5, 9].map((l) => make(s, l)));
-    expect(hashJson(terrains)).toMatchInlineSnapshot(`"3e60ac3f"`);
+    expect(hashJson(terrains)).toMatchInlineSnapshot(`"049b8e41"`);
   });
 });
 

@@ -75,6 +75,13 @@ stale state and the round could not finish.
   swamped a 110 m pexeso crop. `areaOutline` wanders a third outside `rx`/`ry`, and the
   radius band was cut to pay for it.
 - Area kinds are weighted toward white forest; uniform picking filled every card.
+- Only **green** gets `VEGETATION_RADIUS`. A stand of plantation is a management unit and
+  sprawls; a clearing has edges, and giving yellow the same sprawl washed a whole 110 m
+  card in it.
+- Point separation is **per pair** (`separationOf`), not one constant: a crag is a line
+  twice as long as a boulder is wide, and a field of them at the boulder spacing smears
+  into one black mass. `MIN_POINT_SEPARATION` is the advertised floor and is tested
+  against every pair of kinds.
 - `MapView` culls to the window — 381 elements to 228 on a 12-card board.
 - Perturb for contours must target a **landform** (a boulder has no relief); for map memory
   it must land **inside the window** (or two candidates are identical).
@@ -103,6 +110,17 @@ instantly without being able to name.
 - `siblings` **prefers** a plausible perturbation and settles for a merely visible one. A
   hard filter pushes rounds onto the `distance * 2.5` fallback, and a distractor far bigger
   than the level asked for is a worse question than a marsh on a slope.
+- `perturb` takes `within`, and map memory passes its window. Choosing uniformly over the
+  map and retrying was fine while features were spread evenly; once they came in clusters,
+  a window that missed the rocky band held almost nothing and the retries ran out — one
+  round in three had a distractor identical to the answer.
+- **Point features cluster.** Uniform placement with a minimum separation is *more even
+  than random*, and that evenness — more than the count — is what read as generated.
+  Half the fields are crags on a slope break, half boulders on any ground: putting every
+  field on the steepest ground stacked them on the one ridge and left the map bare.
+- Rides are the **compartment grid** and are not a difficulty knob: a managed forest has
+  one, and a map of one without it reads as heath. They are dead straight because they
+  were cut; `tracePath` is for what was walked.
 
 **Cartography**
 
@@ -121,6 +139,10 @@ instantly without being able to name.
 - Form lines are **short**. Gentle ground is everywhere on a tilted map, so a slope test
   alone drew one down the whole card between every pair of contours — which says the
   interval should have been 2.5 m, not that there is a feature here.
+- Areas are drawn **one path per kind**, not one per feature. Vegetation is generated as
+  overlapping lobes so a green reads as one region, and separate translucent shapes
+  composite their overlaps twice — every chain showed its construction as a string of
+  darker lenses.
 - `areaOutline` hashes **shape fields only**. Hashing position makes `perturb` reshape the
   area it moves, so a map-memory distractor differs by more than its level asked for.
 - Pattern ids come from `useId()`; a pexeso board mounts twelve `MapView`s in one document.

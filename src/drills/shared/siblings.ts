@@ -98,6 +98,7 @@ export function siblings(
       const { terrain, change } = perturb(base, rng, {
         distance: options.distance,
         ...(options.target ? { target: options.target } : {}),
+        ...(options.crop ? { within: options.crop } : {}),
       });
       if (!isVisibleChange(base, terrain, change, options)) continue;
       if (!ground || isPlausibleChange(terrain, change, ground)) accepted = terrain;
@@ -111,6 +112,7 @@ export function siblings(
         perturb(base, rng, {
           distance: options.distance * 2.5,
           ...(options.target ? { target: options.target } : {}),
+          ...(options.crop ? { within: options.crop } : {}),
         }).terrain,
     );
   }

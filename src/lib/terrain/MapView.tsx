@@ -144,9 +144,7 @@ export default function MapView({
 
       <rect x={window_.x} y={window_.y} width={window_.size} height={window_.size} fill={COLOUR.ground} />
 
-      {!contoursOnly && visible.areas.map((area, i) => (
-        <Area key={i} area={area} marshId={marshId} />
-      ))}
+      {!contoursOnly && <Areas areas={visible.areas} marshId={marshId} />}
 
       {visible.contours.map((c, i) => (
         <ContourPath key={i} contour={c} unit={unit} />
@@ -229,26 +227,54 @@ function ContourPath({ contour, unit }: { contour: Contour; unit: number }) {
   );
 }
 
-function Area({ area, marshId }: { area: AreaFeature; marshId: string }) {
-  const d = path(areaOutline(area), true);
-  switch (area.kind) {
-    case 'marsh':
-      // Never a solid wash. Solid blue is open water, and to whoever is running the two
-      // mean opposite things — one is crossable and slow, the other is a detour.
-      return <path d={d} fill={`url(#${marshId})`} />;
-    case 'open':
-      return <path d={d} fill={COLOUR.yellow} opacity={YELLOW_SCREEN.open} />;
-    case 'rough':
-      return <path d={d} fill={COLOUR.yellow} opacity={YELLOW_SCREEN.rough} />;
-    case 'slow':
-      return <path d={d} fill={COLOUR.green} opacity={GREEN_SCREEN.slow} />;
-    case 'walk':
-      return <path d={d} fill={COLOUR.green} opacity={GREEN_SCREEN.walk} />;
-    case 'fight':
-      return <path d={d} fill={COLOUR.green} opacity={GREEN_SCREEN.fight} />;
-    case 'rock':
-      return <path d={d} fill={COLOUR.grey} opacity={0.5} />;
+/** Fill and tone for one kind of ground. */
+function paintOf(kind: AreaFeature['kind'], marshId: string): { fill: string; opacity: number } {
+  switch (kind) {
+    // Never a solid wash. Solid blue is open water, and to whoever is running the two
+    // mean opposite things — one is crossable and slow, the other is a detour.
+    case 'marsh': return { fill: `url(#${marshId})`, opacity: 1 };
+    case 'open': return { fill: COLOUR.yellow, opacity: YELLOW_SCREEN.open };
+    case 'rough': return { fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough };
+    case 'slow': return { fill: COLOUR.green, opacity: GREEN_SCREEN.slow };
+    case 'walk': return { fill: COLOUR.green, opacity: GREEN_SCREEN.walk };
+    case 'fight': return { fill: COLOUR.green, opacity: GREEN_SCREEN.fight };
+    case 'rock': return { fill: COLOUR.grey, opacity: 0.5 };
   }
+}
+
+/**
+ * One path per kind, not one per feature.
+ *
+ * Vegetation is generated as overlapping lobes so a green reads as one sprawling region,
+ * and drawn as separate translucent shapes those overlaps composite twice — every chain
+ * showed its own construction as a string of darker lenses. Collecting a kind's outlines
+ * into a single path makes the overlap a union: `nonzero` winding, one fill, one opacity
+ * applied once. It also emits one element where there were five.
+ *
+ * Order is the ISOM drawing order, so a marsh reads over the vegetation it sits in rather
+ * than under whichever patch happened to be generated last.
+ */
+const AREA_ORDER: readonly AreaFeature['kind'][] =
+  ['open', 'rough', 'slow', 'walk', 'fight', 'rock', 'marsh'];
+
+function Areas({ areas, marshId }: { areas: readonly AreaFeature[]; marshId: string }) {
+  return (
+    <>
+      {AREA_ORDER.map((kind) => {
+        const ofKind = areas.filter((a) => a.kind === kind);
+        if (ofKind.length === 0) return null;
+        const { fill, opacity } = paintOf(kind, marshId);
+        return (
+          <path
+            key={kind}
+            d={ofKind.map((a) => path(areaOutline(a), true)).join('')}
+            fill={fill}
+            opacity={opacity}
+          />
+        );
+      })}
+    </>
+  );
 }
 
 function Line({ line, unit }: { line: LineFeature; unit: number }) {

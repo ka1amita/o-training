@@ -57,7 +57,12 @@ function terrainFor(level: number): TerrainParams {
     landforms: scale(5, 9),
     points: scale(10, 18),
     lines: scale(2, 3),
-    areas: scale(3, 6),
+    areas: scale(4, 8),
+    rides: 2,
+    // Fewer than the pexeso map on purpose. The question here is which *one* feature
+    // moved, and a rock field of twenty near-identical crags is a needle in a haystack
+    // rather than a memory of the ground.
+    clusters: scale(1, 3),
   };
 }
 

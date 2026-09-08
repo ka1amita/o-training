@@ -96,13 +96,30 @@ export interface Terrain {
 export interface TerrainParams {
   readonly size: number;
   readonly landforms: number;
+  /** Scattered point features. Clusters are counted separately. */
   readonly points: number;
   readonly lines: number;
   readonly areas: number;
+  /**
+   * Families of parallel rides cutting the forest into compartments — 0, 1 or 2.
+   *
+   * Not a difficulty knob. A managed forest *has* a grid, and a map of one without it
+   * reads as heath: the rides are the strongest structural signature of the terrain this
+   * app is for. The contours drill sets it to 0 along with everything else.
+   */
+  readonly rides: number;
+  /** Rock and boulder fields. Real point features come in patches, not evenly spread. */
+  readonly clusters: number;
 }
 
-/** Point features closer than this read as one blob rather than two features. */
-export const MIN_POINT_SEPARATION = 22;
+/**
+ * The closest two point features can ever be, whatever their kinds. See `separationOf`.
+ *
+ * The 22 m this used to be was twice what print legibility asks for, and it was the main
+ * reason a generated map looked empty beside a surveyed one: a real map puts boulders 10 m
+ * apart and dozens of them in a field.
+ */
+export const MIN_POINT_SEPARATION = 11;   // = DOT_EXTENT * 2 + SYMBOL_GAP, and tested
 
 /**
  * Feature sizes are **metres, not fractions of the map**, because a drill can look at any
@@ -126,7 +143,64 @@ const MAX_LANDFORM_LENGTH = 155;
  * pexeso card, which is the same mistake as sizing features as a fraction of the map.
  */
 const AREA_RADIUS: readonly [number, number] = [9, 21];
-const POINT_SIZE: readonly [number, number] = [3, 7];
+/**
+ * Green runs bigger than anything else, and only green.
+ *
+ * A stand of plantation is a management unit, so on a surveyed map the greens are the
+ * largest things after the contours. A clearing is not: 401 open land is a field or a
+ * felled block with edges, and giving yellow the same sprawl put a solid wash of it across
+ * a whole 110 m card — the same failure as sizing features as a fraction of the map, from
+ * the other direction.
+ */
+const VEGETATION_RADIUS: readonly [number, number] = [14, 34];
+const GREEN: readonly AreaKind[] = ['slow', 'walk', 'fight'];
+const isGreen = (kind: AreaKind): boolean => GREEN.includes(kind);
+const radiusFor = (kind: AreaKind): readonly [number, number] =>
+  isGreen(kind) ? VEGETATION_RADIUS : AREA_RADIUS;
+
+/**
+ * Drawn size in metres, by kind.
+ *
+ * A crag is a **line**, not a dot: ISOM 202 draws it at whatever length the rock runs, and
+ * one 0.8 mm long at 1:15000 is 12 m of ground. The dots are all one ISOM size and ignore
+ * this — it is here so that `separationOf` knows how much room each symbol takes.
+ */
+const POINT_SIZE: Readonly<Record<PointKind, readonly [number, number]>> = {
+  boulder: [3, 6],
+  knoll: [3, 6],
+  pit: [3, 6],
+  tree: [3, 6],
+  crag: [9, 22],
+};
+
+const sizeFor = (rng: Rng, kind: PointKind): number =>
+  rng.range(POINT_SIZE[kind][0], POINT_SIZE[kind][1]);
+
+/** Clear paper between two symbols: 0.35 mm at 1:15000. */
+const SYMBOL_GAP = 5;
+
+/**
+ * Half the ground a symbol covers, in metres.
+ *
+ * Floored at the dot radius even for a crag, so `MIN_POINT_SEPARATION` is a floor no pair
+ * can undercut whatever `size` it was handed. Generation never draws a crag that short,
+ * but a constant others reason with should not depend on that.
+ */
+const DOT_EXTENT = 3;
+const extentOf = (f: PointFeature): number =>
+  f.kind === 'crag' ? Math.max(f.size / 2, DOT_EXTENT) : DOT_EXTENT;
+
+/**
+ * How far apart two point features have to be to still read as two.
+ *
+ * One constant could not do this. Derived for a boulder — a 0.4 mm dot, so about 10 m
+ * between centres — it left a field of crags overlapping into a single black smear,
+ * because a crag is a line twice as long as a boulder is wide. The bar is the room the
+ * two symbols actually take.
+ */
+export const separationOf = (a: PointFeature, b: PointFeature): number =>
+  extentOf(a) + extentOf(b) + SYMBOL_GAP;
+
 
 const POINT_KINDS: readonly PointKind[] = ['boulder', 'knoll', 'pit', 'tree', 'crag'];
 /**
@@ -138,11 +212,11 @@ const POINT_KINDS: readonly PointKind[] = ['boulder', 'knoll', 'pit', 'tree', 'c
  * Bare rock is the rarest thing here for the same reason it is rare underfoot.
  */
 const AREA_KINDS: readonly AreaKind[] = [
-  'slow', 'slow', 'slow',
-  'walk', 'walk',
+  'slow', 'slow', 'slow', 'slow',
+  'walk', 'walk', 'walk',
   'fight',
   'marsh', 'marsh',
-  'rough', 'rough',
+  'rough',
   'open',
   'rock',
 ];
@@ -154,9 +228,11 @@ export function paramsFor(level: number, size = 420): TerrainParams {
   return {
     size,
     landforms: scale(4, 9),
-    points: scale(3, 9),
+    points: scale(10, 26),
     lines: scale(1, 3),
-    areas: scale(2, 5),
+    areas: scale(5, 11),
+    rides: 2,
+    clusters: scale(2, 5),
   };
 }
 
@@ -466,9 +542,12 @@ export function suitsPoint(kind: PointKind, ground: Ground, p: Vec): boolean {
       return here > around;
     case 'pit':
       return here < around;
-    case 'boulder':
     case 'crag':
+      // A crag *is* a slope break. A boulder is not: it sits wherever the ice dropped it,
+      // and requiring steep ground for it pulled every scattered feature onto the one
+      // ridge, leaving the rest of the map blank.
       return slopeAt(ground.grid, p.x, p.y) > ground.slopeQuantile(CRAG_STEEPEST);
+    case 'boulder':
     case 'tree':
       return true;
   }
@@ -479,26 +558,137 @@ function placeAreas(
   params: TerrainParams,
   ground: Ground,
   sinks: readonly Vec[],
+  /** The ride bearing, which vegetation tends to run with — plantation is planted in blocks. */
+  grain: number,
 ): AreaFeature[] {
   const areas: AreaFeature[] = [];
-  const shape = (kind: AreaKind, p: Vec): AreaFeature => ({
-    kind,
-    x: p.x,
-    y: p.y,
-    rx: rng.range(AREA_RADIUS[0], AREA_RADIUS[1]),
-    ry: rng.range(AREA_RADIUS[0], AREA_RADIUS[1]),
-    rotation: rng.range(0, Math.PI),
-  });
+  const shape = (kind: AreaKind, p: Vec): AreaFeature => {
+    const [low, high] = radiusFor(kind);
+    return {
+      kind,
+      x: p.x,
+      y: p.y,
+      rx: rng.range(low, high),
+      ry: rng.range(low, high),
+      rotation: rng.range(0, Math.PI),
+    };
+  };
 
   for (const sink of sinks.slice(0, params.areas)) areas.push(shape('marsh', sink));
 
   while (areas.length < params.areas) {
     const kind = rng.pick(AREA_KINDS);
-    areas.push(
-      shape(kind, sampleWhere(rng, params.size, (q) => suitsArea(kind, ground, q), AREA_ATTEMPTS)),
-    );
+    const head = sampleWhere(rng, params.size, (q) => suitsArea(kind, ground, q), AREA_ATTEMPTS);
+    areas.push(shape(kind, head));
+
+    /**
+     * Vegetation sprawls in **chains**, not in single blobs.
+     *
+     * Green on a surveyed map is one connected, sinuous region running a couple of hundred
+     * metres — it follows a wet line or a stand of plantation. Drawn as one lopsided
+     * ellipse per patch, however irregular its outline, every green on the map was a
+     * separate island of about the same size, which is a texture no forest has.
+     *
+     * Overlapping lobes need no new type: `perturb` still moves one of them, and one lobe
+     * of a chain sliding out is a change the eye catches as readily as a whole patch.
+     */
+    if (!isGreen(kind) || areas.length >= params.areas) continue;
+    // Vegetation runs with the grain of the plantation, which is the grain of the rides.
+    let bearing = grain + rng.range(-0.5, 0.5);
+    let previous = head;
+    const lobes = 1 + rng.int(4);
+    for (let i = 0; i < lobes && areas.length < params.areas; i++) {
+      // Just over one radius along: far enough to extend the region, near enough that the
+      // outlines still overlap into one shape rather than a row of beads.
+      const step = rng.range(VEGETATION_RADIUS[0], VEGETATION_RADIUS[1]) * 1.15;
+      // The chain wanders, or a green is a straight sausage.
+      bearing += rng.range(-0.45, 0.45);
+      const next = {
+        x: previous.x + Math.cos(bearing) * step,
+        y: previous.y + Math.sin(bearing) * step,
+      };
+      if (next.x < params.size * MARGIN || next.x > params.size * (1 - MARGIN)) break;
+      if (next.y < params.size * MARGIN || next.y > params.size * (1 - MARGIN)) break;
+      if (!suitsArea(kind, ground, next)) break;
+      areas.push(shape(kind, next));
+      previous = next;
+    }
   }
   return areas;
+}
+
+/**
+ * Rock and boulder fields.
+ *
+ * Point features on a real map are **clustered, not spread**. A rocky slope carries thirty
+ * crags in a band and the next hillside carries none; scattering them uniformly with a
+ * minimum separation produces the most artificial distribution there is, because it is
+ * more even than random — every feature the same distance from every other, over the whole
+ * map. That evenness, more than the count, is what read as generated.
+ *
+ * A field is elongated **along the contour**, because that is how a slope breaks: crags
+ * form a band across the fall line, not a smear down it.
+ */
+const CLUSTER_KINDS: readonly PointKind[] = ['boulder', 'boulder', 'crag', 'crag', 'knoll'];
+/** A field of boulders that is not a rock face, and so is not tied to a slope. */
+const BOULDER_FIELD_KINDS: readonly PointKind[] = ['boulder', 'boulder', 'boulder', 'knoll', 'pit'];
+const CLUSTER_COUNT: readonly [number, number] = [5, 22];
+const CLUSTER_LONG: readonly [number, number] = [34, 88];
+const CLUSTER_SHORT: readonly [number, number] = [11, 27];
+
+function placeClusters(
+  rng: Rng,
+  params: TerrainParams,
+  ground: Ground,
+  placed: PointFeature[],
+): void {
+  const { size } = params;
+  const lo = size * MARGIN;
+  const hi = size * (1 - MARGIN);
+  const steep = ground.slopeQuantile(CRAG_STEEPEST);
+
+  for (let c = 0; c < params.clusters; c++) {
+    // Half the fields are rock on a slope break and half are boulders on whatever ground
+    // they were left on. Putting every field on the steepest ground stacked them all on
+    // the one ridge and left the rest of the map bare — the map had detail, in one place.
+    const onSlope = rng.int(2) === 0;
+    const kinds = onSlope ? CLUSTER_KINDS : BOULDER_FIELD_KINDS;
+    const centre = onSlope
+      ? sampleWhere(rng, size, (q) => slopeAt(ground.grid, q.x, q.y) > steep)
+      : sampleWhere(rng, size, () => true, 1);
+    const down = downhillAt(ground.grid, centre.x, centre.y);
+    const along =
+      down.x === 0 && down.y === 0
+        ? rng.range(0, Math.PI)
+        : Math.atan2(down.y, down.x) + Math.PI / 2;
+    const cos = Math.cos(along);
+    const sin = Math.sin(along);
+    const long = rng.range(CLUSTER_LONG[0], CLUSTER_LONG[1]);
+    const short = rng.range(CLUSTER_SHORT[0], CLUSTER_SHORT[1]);
+    const wanted = rng.int(CLUSTER_COUNT[1] - CLUSTER_COUNT[0] + 1) + CLUSTER_COUNT[0];
+
+    let made = 0;
+    for (let attempt = 0; made < wanted && attempt < wanted * ATTEMPT_FACTOR; attempt++) {
+      // Uniform over the ellipse, not over its bounding box: a box leaves the corners
+      // populated and the field ends up rectangular.
+      const angle = rng.range(0, 2 * Math.PI);
+      const radius = Math.sqrt(rng.float());
+      const lx = Math.cos(angle) * radius * long;
+      const ly = Math.sin(angle) * radius * short;
+      const p = {
+        x: centre.x + lx * cos - ly * sin,
+        y: centre.y + lx * sin + ly * cos,
+      };
+      if (p.x < lo || p.x > hi || p.y < lo || p.y > hi) continue;
+      const kind = rng.pick(kinds);
+      // A field of knolls has to sit on knolls like any other, so the same check applies.
+      if (!suitsPoint(kind, ground, p)) continue;
+      const feature = { kind, x: p.x, y: p.y, size: sizeFor(rng, kind) };
+      if (placed.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < separationOf(q, feature))) continue;
+      placed.push(feature);
+      made++;
+    }
+  }
 }
 
 /**
@@ -510,16 +700,20 @@ function placeAreas(
  */
 function placePoints(rng: Rng, params: TerrainParams, count: number, ground: Ground): PointFeature[] {
   const placed: PointFeature[] = [];
+  // Fields first: they are the shape of the ground, and the scatter fills in around them
+  // rather than the other way round.
+  placeClusters(rng, params, ground, placed);
   const lo = params.size * MARGIN;
   const hi = params.size * (1 - MARGIN);
   const inside = (p: Vec) => p.x >= lo && p.x <= hi && p.y >= lo && p.y <= hi;
-  const clear = (p: Vec) =>
-    !placed.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < MIN_POINT_SEPARATION);
+  const clear = (f: PointFeature) =>
+    !placed.some((q) => Math.hypot(q.x - f.x, q.y - f.y) < separationOf(q, f));
 
   // Rejection sampling with a budget. A hard loop could not terminate at high counts in a
   // small area; giving up quietly leaves a slightly sparser map, which is harmless, and
   // the separation invariant still holds for everything that was placed.
-  for (let attempts = 0; placed.length < count && attempts < count * ATTEMPT_FACTOR; attempts++) {
+  const target = placed.length + count;
+  for (let attempts = 0; placed.length < target && attempts < count * ATTEMPT_FACTOR; attempts++) {
     const kind = rng.pick(POINT_KINDS);
     let p: Vec;
     if (kind === 'knoll' || kind === 'pit') {
@@ -530,19 +724,20 @@ function placePoints(rng: Rng, params: TerrainParams, count: number, ground: Gro
       // Nudged off the exact sample so several knolls do not stack on one grid cell.
       p = { x: anchor.x + rng.range(-4, 4), y: anchor.y + rng.range(-4, 4) };
       if (!inside(p)) continue;
-    } else if (kind === 'boulder' || kind === 'crag') {
+    } else if (kind === 'crag') {
       const steep = ground.slopeQuantile(CRAG_STEEPEST);
       p = sampleWhere(rng, params.size, (q) => slopeAt(ground.grid, q.x, q.y) > steep);
     } else {
       p = sampleWhere(rng, params.size, () => true, 1);
     }
-    if (!clear(p)) continue;
+    const feature = { kind, x: p.x, y: p.y, size: sizeFor(rng, kind) };
+    if (!clear(feature)) continue;
     // Checked, not assumed. A grid maximum at 4.7 m spacing is not always a rise at the
     // 10 m the eye reads, and the nudge above can push a knoll off its own summit onto
     // the slope beside it. Asking the predicate is what makes the invariant hold rather
     // than hold usually.
     if (!suitsPoint(kind, ground, p)) continue;
-    placed.push({ kind, x: p.x, y: p.y, size: rng.range(POINT_SIZE[0], POINT_SIZE[1]) });
+    placed.push(feature);
   }
   return placed;
 }
@@ -550,6 +745,78 @@ function placePoints(rng: Rng, params: TerrainParams, count: number, ground: Gro
 // ---------------------------------------------------------------------------------------
 // Lines
 // ---------------------------------------------------------------------------------------
+
+/**
+ * Where a straight line through `origin` in direction `d` leaves the square, or null if
+ * it misses. Liang-Barsky over the four edges.
+ */
+function clipToSquare(origin: Vec, d: Vec, size: number): readonly [Vec, Vec] | null {
+  let near = -Infinity;
+  let far = Infinity;
+  const slab = (position: number, direction: number): boolean => {
+    if (Math.abs(direction) < 1e-9) return position >= 0 && position <= size;
+    const a = (0 - position) / direction;
+    const b = (size - position) / direction;
+    near = Math.max(near, Math.min(a, b));
+    far = Math.min(far, Math.max(a, b));
+    return true;
+  };
+  if (!slab(origin.x, d.x) || !slab(origin.y, d.y)) return null;
+  if (near >= far) return null;
+
+  // Snapped, not just clamped. A ride ends *on* the border, and the invariant that says so
+  // is an equality: `origin + d * t` lands a few ulps either side of it, which reads as a
+  // line stopping just short of the edge or running just past it.
+  const snap = (v: number) => (Math.abs(v) < 1e-6 ? 0 : Math.abs(v - size) < 1e-6 ? size : v);
+  const at = (t: number): Vec => ({
+    x: snap(Math.min(size, Math.max(0, origin.x + d.x * t))),
+    y: snap(Math.min(size, Math.max(0, origin.y + d.y * t))),
+  });
+  return [at(near), at(far)];
+}
+
+/**
+ * The compartment grid: families of dead-straight parallel rides.
+ *
+ * A managed forest is *divided*, and the division is the first thing you see on a map of
+ * one — long straight rides at a fixed bearing, a hundred-odd metres apart, cutting the
+ * ground into blocks. Everything else on the map sits inside those blocks. Without them
+ * the drills were drawing open heath with a few wandering tracks on it.
+ *
+ * Rides are straight because they were cut, not walked. `tracePath` is for the paths that
+ * were walked, and those bend.
+ */
+const RIDE_SPACING: readonly [number, number] = [80, 170];
+
+function placeRides(rng: Rng, params: TerrainParams): LineFeature[] {
+  const { size } = params;
+  const lines: LineFeature[] = [];
+  // The second family is roughly square to the first, which is how a forest is laid out,
+  // with enough slack that the blocks are not graph paper.
+  const first = rng.range(0, Math.PI);
+
+  for (let family = 0; family < params.rides; family++) {
+    const bearing = family === 0 ? first : first + Math.PI / 2 + rng.range(-0.25, 0.25);
+    const d = { x: Math.cos(bearing), y: Math.sin(bearing) };
+    const normal = { x: -d.y, y: d.x };
+    const spacing = rng.range(RIDE_SPACING[0], RIDE_SPACING[1]);
+    // The square's corners span this much along the normal, so stepping across that range
+    // covers the map whatever the bearing.
+    const reach = size * (Math.abs(normal.x) + Math.abs(normal.y)) / 2;
+    const phase = rng.range(0, spacing);
+
+    for (let offset = -reach + phase; offset <= reach; offset += spacing) {
+      const origin = {
+        x: size / 2 + normal.x * offset,
+        y: size / 2 + normal.y * offset,
+      };
+      const ends = clipToSquare(origin, d, size);
+      if (!ends) continue;
+      lines.push({ kind: 'ride', points: [ends[0], ends[1]] });
+    }
+  }
+  return lines;
+}
 
 /** A point on the border, and the point on the far side to aim at. */
 function crossing(rng: Rng, size: number): readonly [Vec, Vec] {
@@ -734,6 +1001,10 @@ function placeLines(rng: Rng, params: TerrainParams, ground: Ground): Drainage {
   const { size } = params;
 
   // The contours drill asks for a map with nothing on it but the relief, and it means it.
+  if (params.lines <= 0 && params.rides <= 0) return { lines, sinks };
+
+  lines.push(...placeRides(rng, params));
+  const rideCount = lines.length;
   if (params.lines <= 0) return { lines, sinks };
 
   // Water starts where it gathers: high ground, but not the very top of it.
@@ -754,16 +1025,20 @@ function placeLines(rng: Rng, params: TerrainParams, ground: Ground): Drainage {
     if (!onEdge) sinks.push(end);
   }
 
-  if (lines.length < params.lines) {
-    const [start, end] = crossing(rng, size);
-    lines.push({ kind: 'path', points: tracePath(ground, start, end, size) });
+  // `params.lines` counts the lines that were *walked or built*, on top of the grid.
+  const [start, end] = crossing(rng, size);
+  lines.push({ kind: 'path', points: tracePath(ground, start, end, size) });
+
+  while (lines.length < rideCount + params.lines) {
+    const [from, to] = crossing(rng, size);
+    lines.push(
+      rng.int(3) === 0
+        ? makeStraightOrWandering(rng, params, 'fence')
+        : { kind: 'path', points: tracePath(ground, from, to, size) },
+    );
   }
 
-  while (lines.length < params.lines) {
-    lines.push(makeStraightOrWandering(rng, params, rng.pick(['fence', 'ride'] as const)));
-  }
-
-  return { lines: lines.slice(0, params.lines), sinks };
+  return { lines, sinks };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -800,11 +1075,17 @@ export function generateTerrain(rng: Rng, params: TerrainParams): Terrain {
 
   // Water before ground cover: a marsh is put where the stream ends, so the two agree.
   const drainage = placeLines(rng, params, ground);
+  const grain = drainage.lines.length > 0
+    ? Math.atan2(
+        drainage.lines[0]!.points[1]!.y - drainage.lines[0]!.points[0]!.y,
+        drainage.lines[0]!.points[1]!.x - drainage.lines[0]!.points[0]!.x,
+      )
+    : rng.range(0, Math.PI);
 
   return {
     ...bare,
     lines: drainage.lines,
-    areas: placeAreas(rng, params, ground, drainage.sinks),
+    areas: placeAreas(rng, params, ground, drainage.sinks, grain),
     points: placePoints(rng, params, params.points, ground),
   };
 }
@@ -832,10 +1113,36 @@ export interface Perturbed {
 export function perturb(
   terrain: Terrain,
   rng: Rng,
-  options: { readonly distance: number; readonly target?: 'landform' | 'any' },
+  options: {
+    readonly distance: number;
+    readonly target?: 'landform' | 'any';
+    /**
+     * Move something whose centre lies in this window.
+     *
+     * Without it the choice is uniform over the whole map, and a drill that shows one
+     * window then asks what moved gets a distractor identical to the answer whenever the
+     * draw lands outside. Retrying covered that while features were spread evenly; once
+     * they came in clusters, a window that missed the rocky band held almost nothing and
+     * the retries ran out. Choosing from what is *in* the window makes it structural
+     * rather than probable.
+     */
+    readonly within?: { readonly x: number; readonly y: number; readonly size: number };
+  },
 ): Perturbed {
-  const { distance } = options;
+  const { distance, within } = options;
   const target = options.target ?? 'any';
+
+  const inWindow = (f: Vec): boolean =>
+    !within ||
+    (f.x >= within.x && f.x <= within.x + within.size &&
+      f.y >= within.y && f.y <= within.y + within.size);
+
+  /** Indices of the features of one list that the window can show. */
+  const usable = (list: readonly Vec[]): number[] => {
+    const inside = list.flatMap((f, i) => (inWindow(f) ? [i] : []));
+    // A window with nothing in it cannot be helped here; `wellFormed` is what catches it.
+    return inside.length > 0 ? inside : list.map((_, i) => i);
+  };
 
   const pools: Change['what'][] =
     target === 'landform'
@@ -856,20 +1163,20 @@ export function perturb(
   const clamp = (v: number) => Math.min(terrain.size, Math.max(0, v));
 
   if (what === 'landform') {
-    const index = rng.int(terrain.landforms.length);
+    const index = rng.pick(usable(terrain.landforms));
     const landforms = terrain.landforms.map((f, i) =>
       i === index ? { ...f, x: clamp(f.x + dx), y: clamp(f.y + dy) } : f,
     );
     return { terrain: { ...terrain, landforms }, change: { what, index, distance } };
   }
   if (what === 'point') {
-    const index = rng.int(terrain.points.length);
+    const index = rng.pick(usable(terrain.points));
     const points = terrain.points.map((f, i) =>
       i === index ? { ...f, x: clamp(f.x + dx), y: clamp(f.y + dy) } : f,
     );
     return { terrain: { ...terrain, points }, change: { what, index, distance } };
   }
-  const index = rng.int(terrain.areas.length);
+  const index = rng.pick(usable(terrain.areas));
   const areas = terrain.areas.map((f, i) =>
     i === index ? { ...f, x: clamp(f.x + dx), y: clamp(f.y + dy) } : f,
   );

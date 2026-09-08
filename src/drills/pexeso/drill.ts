@@ -69,9 +69,11 @@ function terrainFor(level: number): TerrainParams {
   return {
     size: 300,
     landforms: scale(6, 10),
-    points: scale(12, 20),
+    points: scale(14, 24),
     lines: scale(2, 3),
-    areas: scale(3, 6),
+    areas: scale(6, 12),
+    rides: 2,
+    clusters: scale(3, 6),
   };
 }
 

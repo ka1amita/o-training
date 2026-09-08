@@ -55,8 +55,9 @@ function octave(seed: number, x: number, y: number, wavelength: number): number 
  * with noise loops instead of the long parallel contours gentle ground actually shows.
  */
 const OCTAVES: readonly { readonly wavelength: number; readonly amplitude: number }[] = [
-  { wavelength: 60, amplitude: 1 },
-  { wavelength: 28, amplitude: 0.3 },
+  { wavelength: 62, amplitude: 1.5 },
+  { wavelength: 27, amplitude: 0.6 },
+  { wavelength: 13, amplitude: 0.2 },
 ];
 
 /**

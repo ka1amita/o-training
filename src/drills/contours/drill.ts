@@ -52,6 +52,8 @@ export const contours = defineDrill<ContoursRound, ContoursAnswer>({
       points: 0,
       lines: 0,
       areas: 0,
+      rides: 0,
+      clusters: 0,
     });
     return siblings(rng, base, OPTIONS, {
       distance: distanceFor(level),
