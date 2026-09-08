@@ -144,3 +144,7 @@ npm run preview      # PWA behaviour needs the built bundle, not the dev server
 beside the relief they describe. Dev builds only; `App` loads it lazily behind
 `import.meta.env.DEV` so it folds out of the bundle. Cartography is checked by eye, and
 that is only safe while looking is cheap.
+
+CI runs the first three on every push and pull request. A green run on `main` publishes
+`dist/` to `gh-pages` — so a merge to `main` is a release, and the artifact that ships is
+the one the checks ran against, never a rebuild.

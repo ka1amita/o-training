@@ -2,9 +2,9 @@
 //
 //   npm run deploy
 //
-// A branch deploy rather than a GitHub Actions workflow, because pushing anything under
-// .github/workflows/ needs the `workflow` token scope, and this checkout's gh login does
-// not have it. To switch to Actions later:  gh auth refresh -s workflow
+// The manual escape hatch. The normal deploy is .github/workflows/ci.yml, which does the
+// same push from CI once typecheck, tests and the build are green — this one skips all
+// three, so reach for it only when Actions is unavailable.
 //
 // The build is a disposable artifact, so the branch is force-pushed and holds one commit.
 // Nothing but dist/ ever lives there; source stays on main.
