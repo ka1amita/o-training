@@ -28,6 +28,15 @@ Progress tracks **median response time per session** — the number a 2026 study
 Danish elite squad found falling 27% over six weeks of this kind of work, steeply through
 about session seven and then flattening.
 
+## Deploy
+
+Static files, so anything will host it. For a GitHub Pages project site the app is served
+from `/<repo>/`, which `base` has to know about:
+
+```bash
+OB_BASE=/ob-training/ npm run build   # then publish dist/
+```
+
 ## Privacy
 
 Stored on your device: a level per drill and a list of finished sessions
