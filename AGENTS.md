@@ -90,3 +90,7 @@ stale state and the round could not finish.
 npm run typecheck && npm test && npm run build
 npm run preview      # PWA behaviour needs the built bundle, not the dev server
 ```
+
+CI runs the first three on every push and pull request. A green run on `main` publishes
+`dist/` to `gh-pages` — so a merge to `main` is a release, and the artifact that ships is
+the one the checks ran against, never a rebuild.

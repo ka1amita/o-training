@@ -36,16 +36,27 @@ Live at <https://www.matejkala.com/ob-training/>.
 `ka1amita.github.io/ob-training/` redirects there. The `/ob-training/` subpath — which
 `base` has to match — is the same either way.)
 
+Pushing to `main` is the deploy. `.github/workflows/ci.yml` runs typecheck, tests, and the
+`base=/ob-training/` build; only if all three are green does it force-push that same
+`dist/` to the `gh-pages` branch. The deploy job publishes the **artifact the checks ran
+against** rather than rebuilding — otherwise "green" would be a claim about a different
+build. Pull requests run the checks and stop there.
+
+The job declares a `production` environment, so Actions keeps the deployment history and
+the live URL, and a required reviewer can be added there later to gate releases.
+
+Manual escape hatch, unchanged:
+
 ```bash
 npm run deploy
 ```
 
-Builds with `base=/ob-training/` — a Pages project site is served from a subpath — and
-force-pushes `dist/` to the `gh-pages` branch. Source stays on `main`; that branch only
-ever holds the current build.
+Builds and force-pushes `dist/` to `gh-pages` from your machine. Source stays on `main`;
+that branch only ever holds the current build, one commit deep.
 
-A GitHub Actions workflow would be nicer, but pushing anything under `.github/workflows/`
-needs the `workflow` token scope. To switch: `gh auth refresh -s workflow`.
+Pushing anything under `.github/workflows/` needs the `workflow` token scope when git is
+authenticating over HTTPS with an OAuth token. `origin` here is SSH, which is not subject
+to it; if you ever switch to HTTPS: `gh auth refresh -s workflow`.
 
 ## Privacy
 
