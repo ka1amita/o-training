@@ -30,12 +30,18 @@ about session seven and then flattening.
 
 ## Deploy
 
-Static files, so anything will host it. For a GitHub Pages project site the app is served
-from `/<repo>/`, which `base` has to know about:
+Live at <https://ka1amita.github.io/ob-training/>.
 
 ```bash
-OB_BASE=/ob-training/ npm run build   # then publish dist/
+npm run deploy
 ```
+
+Builds with `base=/ob-training/` — a Pages project site is served from a subpath — and
+force-pushes `dist/` to the `gh-pages` branch. Source stays on `main`; that branch only
+ever holds the current build.
+
+A GitHub Actions workflow would be nicer, but pushing anything under `.github/workflows/`
+needs the `workflow` token scope. To switch: `gh auth refresh -s workflow`.
 
 ## Privacy
 
