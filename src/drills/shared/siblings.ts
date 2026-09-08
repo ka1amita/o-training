@@ -1,7 +1,10 @@
 import type { Rng } from '@/lib/rng.ts';
 import type { Crop } from '@/lib/terrain/MapView.tsx';
 import { maxHeightDifference } from '@/lib/terrain/height.ts';
-import { perturb, type Change, type Terrain } from '@/lib/terrain/terrain.ts';
+import {
+  perturb, readGround, suitsArea, suitsPoint,
+  type Change, type Ground, type Terrain,
+} from '@/lib/terrain/terrain.ts';
 
 /**
  * A target and its near-identical siblings, shuffled, with the target's index.
@@ -37,6 +40,28 @@ function movedFeature(before: Terrain, after: Terrain, change: Change) {
 const inside = (p: { x: number; y: number }, crop: Crop) =>
   p.x >= crop.x && p.x <= crop.x + crop.size && p.y >= crop.y && p.y <= crop.y + crop.size;
 
+/**
+ * Whether the moved feature still belongs where it now is.
+ *
+ * Once the generator places a marsh in flat, low ground and a crag on steep ground, a
+ * perturbation that drops one somewhere else is a **tell**: a strong player learns to
+ * pick the odd card out by spotting the marsh on the hillside rather than by remembering
+ * the ground, which is a different skill and not the one being trained.
+ *
+ * It is a preference and not a filter. Insisting on it would push more rounds onto the
+ * `distance * 2.5` fallback below, and a distractor that differs by far more than the
+ * level asked for is a worse question than a slightly odd marsh.
+ */
+export function isPlausibleChange(after: Terrain, change: Change, ground: Ground): boolean {
+  if (change.what === 'landform') return true;
+  if (change.what === 'area') {
+    const area = after.areas[change.index]!;
+    return suitsArea(area.kind, ground, area);
+  }
+  const point = after.points[change.index]!;
+  return suitsPoint(point.kind, ground, point);
+}
+
 /** Whether this perturbation is one the player could notice. */
 export function isVisibleChange(
   before: Terrain,
@@ -61,15 +86,24 @@ export function siblings(
 ): Siblings {
   const made: Terrain[] = [];
 
+  // Sampled once for the whole round. Perturbing a point or an area leaves the height
+  // field alone, so every candidate is judged against the same ground; targeting a
+  // landform changes the field, and there plausibility has nothing to say anyway.
+  const ground = options.target === 'landform' ? null : readGround(base);
+
   while (made.length < count - 1) {
     let accepted: Terrain | null = null;
+    let visibleOnly: Terrain | null = null;
     for (let attempt = 0; attempt < ATTEMPTS && !accepted; attempt++) {
       const { terrain, change } = perturb(base, rng, {
         distance: options.distance,
         ...(options.target ? { target: options.target } : {}),
       });
-      if (isVisibleChange(base, terrain, change, options)) accepted = terrain;
+      if (!isVisibleChange(base, terrain, change, options)) continue;
+      if (!ground || isPlausibleChange(terrain, change, ground)) accepted = terrain;
+      else visibleOnly ??= terrain;
     }
+    accepted ??= visibleOnly;
     // Falling back to a bigger move is better than shipping an unanswerable round: an
     // easier distractor is a worse question, a duplicate of the answer is not a question.
     made.push(

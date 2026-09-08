@@ -1,3 +1,4 @@
+import { microRelief } from './noise.ts';
 import type { Landform, Terrain } from './terrain.ts';
 
 /**
@@ -27,8 +28,22 @@ export function contributionOf(f: Landform, x: number, y: number): number {
   return f.amplitude * bump(Math.hypot(lx, ly) / f.radius);
 }
 
+/**
+ * Height is a **regional slope**, plus the landforms, plus a metre of micro-relief.
+ *
+ * The slope is not decoration. Without it the ground between features is exactly flat at
+ * exactly zero, so the map is a few nested ovals floating in white — and real ground is
+ * never level, so real maps carry contours everywhere. It also guarantees drainage:
+ * every point has somewhere downhill to send a stream, which is what stops the descent
+ * in `generateTerrain` from stalling in a plain.
+ *
+ * Tilt and `noiseSeed` both survive `perturb` untouched, so siblings differ only where
+ * the moved landform reaches.
+ */
 export function heightAt(terrain: Terrain, x: number, y: number): number {
-  let h = 0;
+  const half = terrain.size / 2;
+  let h = terrain.tilt.x * (x - half) + terrain.tilt.y * (y - half);
+  h += microRelief(terrain.noiseSeed, x, y);
   for (const f of terrain.landforms) h += contributionOf(f, x, y);
   return h;
 }
@@ -56,6 +71,39 @@ export function sampleGrid(terrain: Terrain, n: number): Grid {
     }
   }
   return { n, size: terrain.size, values, min, max };
+}
+
+/** Bilinear sample of a traced grid, in metres. Outside the grid it clamps to the edge. */
+export function sampleGridAt(grid: Grid, x: number, y: number): number {
+  const { n, size, values } = grid;
+  const step = size / n;
+  const gx = Math.min(n, Math.max(0, x / step));
+  const gy = Math.min(n, Math.max(0, y / step));
+  const i = Math.min(n - 1, Math.floor(gx));
+  const j = Math.min(n - 1, Math.floor(gy));
+  const fx = gx - i;
+  const fy = gy - j;
+  const at = (a: number, b: number) => values[b * (n + 1) + a]!;
+  const top = at(i, j) * (1 - fx) + at(i + 1, j) * fx;
+  const bottom = at(i, j + 1) * (1 - fx) + at(i + 1, j + 1) * fx;
+  return top * (1 - fy) + bottom * fy;
+}
+
+/** Gradient magnitude in metres per metre, by central differences on the grid. */
+export function slopeAt(grid: Grid, x: number, y: number): number {
+  const step = grid.size / grid.n;
+  const dx = (sampleGridAt(grid, x + step, y) - sampleGridAt(grid, x - step, y)) / (2 * step);
+  const dy = (sampleGridAt(grid, x, y + step) - sampleGridAt(grid, x, y - step)) / (2 * step);
+  return Math.hypot(dx, dy);
+}
+
+/** Downhill unit vector. Zero-length on a perfect flat, which callers must tolerate. */
+export function downhillAt(grid: Grid, x: number, y: number): { x: number; y: number } {
+  const step = grid.size / grid.n;
+  const dx = (sampleGridAt(grid, x + step, y) - sampleGridAt(grid, x - step, y)) / (2 * step);
+  const dy = (sampleGridAt(grid, x, y + step) - sampleGridAt(grid, x, y - step)) / (2 * step);
+  const length = Math.hypot(dx, dy);
+  return length === 0 ? { x: 0, y: 0 } : { x: -dx / length, y: -dy / length };
 }
 
 /**

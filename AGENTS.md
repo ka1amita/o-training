@@ -72,11 +72,60 @@ stale state and the round could not finish.
 - **Features, not noise.** That is what makes `perturb` an operation — reseeding noise gives
   a different map, not a sibling. Landform falloff has compact support for the same reason.
 - Feature sizes are **metres, not fractions of the map**: a marsh drawn for a 420 m map
-  swamped a 110 m pexeso crop.
+  swamped a 110 m pexeso crop. `areaOutline` wanders a third outside `rx`/`ry`, and the
+  radius band was cut to pay for it.
 - Area kinds are weighted toward white forest; uniform picking filled every card.
-- `MapView` culls to the window — a pexeso card went from 152 elements to 9.
+- `MapView` culls to the window — 381 elements to 228 on a 12-card board.
 - Perturb for contours must target a **landform** (a boulder has no relief); for map memory
   it must land **inside the window** (or two candidates are identical).
+
+**Terrain reads the ground**
+
+`generateTerrain` runs in phases and the order is the point: landforms, then one
+`readGround` sampling, then everything else placed by consulting it. A stream that ignores
+the height field runs over hilltops; a marsh on a slope is wrongness an orienteer sees
+instantly without being able to name.
+
+- **`tilt` and `noiseSeed` survive `perturb` untouched.** Otherwise siblings differ
+  everywhere and compact support stops meaning anything. `noiseSeed` 0 means *no*
+  micro-relief and exists for the tracer's own geometry tests; generation sets the low bit
+  so it cannot land there.
+- Ground thresholds are **quantiles of this map**, not absolutes. The regional tilt alone
+  spans 0.05–0.11 m/m, so an absolute "flat enough for a marsh" bar left steep maps with
+  no legal spot and every marsh fell through to the unconditioned fallback.
+- The ridge lies **across** the regional fall, so its spurs and re-entrants run down it.
+  A re-entrant across the fall line is a closed basin, not a valley.
+- `placePoints` **checks** `suitsPoint` rather than trusting the extremum it sampled: a
+  grid maximum at 4.7 m spacing is not always a rise at the 10 m the eye reads.
+- A stream may begin inland — that is a spring — but a path, fence or ride crosses the map.
+  Where a stream sinks, a marsh is drawn; that marsh is the one area exempt from
+  `suitsArea`, and the tests exempt it by matching the stream's last point.
+- `siblings` **prefers** a plausible perturbation and settles for a merely visible one. A
+  hard filter pushes rounds onto the `distance * 2.5` fallback, and a distractor far bigger
+  than the level asked for is a worse question than a marsh on a slope.
+
+**Cartography**
+
+- Widths are **millimetres of paper at 1:15000** (`isom.ts`). `mm → unit` is `100 / 28`
+  and window-independent, because a crop is the same map printed at a larger scale.
+- **Slope tags are not decoration.** Without them a knoll and a hollow are the same
+  picture, and the contours drill hands out cards that cannot answer their own question.
+  `slopeTagsFor` probes inward from the polygon's own orientation and compares each probe
+  with **its own vertex** — not with `contour.level`, which the trace nudges away from.
+- A **closed contour repeats its first point**. Counting that copy as a vertex gives index
+  0 a one-sided normal: harmless on a long ring, 45 degrees out on the four-segment ring
+  at the bottom of a hollow, which was the one contour that never got tagged.
+- `stitch` walks a chain **both ways**. Forwards only recovers any closed loop but shreds
+  an open one, because the outer loop meets segments in cell order and enters a contour in
+  its middle: 175 paths where there were 3.
+- Form lines are **short**. Gentle ground is everywhere on a tilted map, so a slope test
+  alone drew one down the whole card between every pair of contours — which says the
+  interval should have been 2.5 m, not that there is a feature here.
+- `areaOutline` hashes **shape fields only**. Hashing position makes `perturb` reshape the
+  area it moves, so a map-memory distractor differs by more than its level asked for.
+- Pattern ids come from `useId()`; a pexeso board mounts twelve `MapView`s in one document.
+- **No north lines.** Drawn at fixed world positions, a pexeso pair's two crops would show
+  them at a known offset — an answer coming from something other than the ground.
 
 **Presentation**
 
@@ -90,3 +139,8 @@ stale state and the round could not finish.
 npm run typecheck && npm test && npm run build
 npm run preview      # PWA behaviour needs the built bundle, not the dev server
 ```
+
+`#/dev/maps` is a contact sheet of many seeds at once — whole map, 110 m crop, contours
+beside the relief they describe. Dev builds only; `App` loads it lazily behind
+`import.meta.env.DEV` so it folds out of the bundle. Cartography is checked by eye, and
+that is only safe while looking is cheap.

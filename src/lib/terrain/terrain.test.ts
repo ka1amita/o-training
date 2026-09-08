@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import {
-  generateTerrain, paramsFor, perturb, MIN_POINT_SEPARATION, type Terrain,
+  generateTerrain, paramsFor, perturb, readGround, suitsArea, suitsPoint,
+  MIN_POINT_SEPARATION, type Terrain,
 } from './terrain.ts';
 import { contributionOf, heightAt, maxHeightDifference, sampleGrid } from './height.ts';
 import { contoursOf, marchingSquares, stitch } from './contours.ts';
@@ -60,13 +61,17 @@ describe('terrain / generate', () => {
     expect(count(make(1, 1))).toBeLessThan(count(make(1, 10)));
   });
 
-  it('gives every line two ends on the boundary', () => {
+  it('gives every made line two ends on the boundary', () => {
+    // A path, a fence or a ride that stops nowhere is the one thing that never appears on
+    // a real map. Water is the exception and is asserted separately: a stream begins at a
+    // source, which is somewhere in the middle of the ground, not at the edge of the page.
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const t = make(seed, level);
         const onEdge = (v: { x: number; y: number }) =>
           v.x === 0 || v.y === 0 || v.x === t.size || v.y === t.size;
         for (const line of t.lines) {
+          if (line.kind === 'stream') continue;
           expect(onEdge(line.points[0]!)).toBe(true);
           expect(onEdge(line.points[line.points.length - 1]!)).toBe(true);
         }
@@ -75,9 +80,80 @@ describe('terrain / generate', () => {
     );
   });
 
+  it('scales the relief into a legible band for a 5 m interval', () => {
+    // The whole reason amplitudes are normalised: a map that came out with three contour
+    // lines and the next with thirty are both unreadable, in opposite directions.
+    fc.assert(
+      fc.property(anySeed, anyLevel, (seed, level) => {
+        const t = make(seed, level);
+        const grid = sampleGrid(t, 48);
+        const relief = grid.max - grid.min;
+        expect(relief).toBeGreaterThan(15);
+        expect(relief).toBeLessThan(90);
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  it('runs every stream downhill', () => {
+    // Water over a hilltop is the least subtle mistake a generated map can make.
+    fc.assert(
+      fc.property(anySeed, anyLevel, (seed, level) => {
+        const t = make(seed, level);
+        for (const line of t.lines) {
+          if (line.kind !== 'stream') continue;
+          const heights = line.points.map((p) => heightAt(t, p.x, p.y));
+          // Smoothing moves a vertex a little off the traced line, so this is descent
+          // over the whole watercourse rather than between every adjacent pair.
+          expect(heights[heights.length - 1]!).toBeLessThan(heights[0]!);
+          for (let i = 4; i < heights.length; i++) {
+            expect(heights[i]!).toBeLessThanOrEqual(heights[i - 4]! + 0.5);
+          }
+        }
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  it('puts every area on ground that suits it', () => {
+    fc.assert(
+      fc.property(anySeed, anyLevel, (seed, level) => {
+        const t = make(seed, level);
+        const ground = readGround(t);
+        // The marsh drawn where a stream sinks is the one exception, and it is placed
+        // *because* the water stops there rather than because the slope suits it.
+        const sinks = t.lines
+          .filter((l) => l.kind === 'stream')
+          .map((l) => l.points[l.points.length - 1]!);
+        const isSink = (a: { x: number; y: number }) =>
+          sinks.some((e) => Math.hypot(e.x - a.x, e.y - a.y) < 1);
+        for (const area of t.areas) {
+          if (isSink(area)) continue;
+          expect(suitsArea(area.kind, ground, area), `${area.kind} at ${area.x},${area.y}`)
+            .toBe(true);
+        }
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  it('puts every knoll on a rise and every pit in a hollow', () => {
+    fc.assert(
+      fc.property(anySeed, anyLevel, (seed, level) => {
+        const t = make(seed, level);
+        const ground = readGround(t);
+        for (const f of t.points) {
+          if (f.kind !== 'knoll' && f.kind !== 'pit') continue;
+          expect(suitsPoint(f.kind, ground, f), `${f.kind} at ${f.x},${f.y}`).toBe(true);
+        }
+      }),
+      { numRuns: 100 },
+    );
+  });
+
   it('golden: fixed seeds at fixed levels', () => {
     const terrains = [1, 2, 3].flatMap((s) => [1, 5, 9].map((l) => make(s, l)));
-    expect(hashJson(terrains)).toMatchInlineSnapshot(`"1e3fb96f"`);
+    expect(hashJson(terrains)).toMatchInlineSnapshot(`"863f6f87"`);
   });
 });
 
@@ -182,6 +258,20 @@ describe('terrain / perturb', () => {
     );
   });
 
+  it('carries the tilt and the micro-relief seed through unchanged', () => {
+    // Siblings must share both, or they differ everywhere and compact support — the whole
+    // reason a landform's falloff is bounded — stops meaning anything.
+    fc.assert(
+      fc.property(anySeed, anyLevel, (seed, level) => {
+        const base = make(seed, level);
+        const moved = perturb(base, seeded(seed + 1), { distance: 30 }).terrain;
+        expect(moved.noiseSeed).toBe(base.noiseSeed);
+        expect(moved.tilt).toEqual(base.tilt);
+      }),
+      { numRuns: 100 },
+    );
+  });
+
   it('a bigger move changes the relief more', () => {
     const base = make(77);
     const small = perturb(base, seeded(3), { distance: 10, target: 'landform' }).terrain;
@@ -196,6 +286,10 @@ describe('terrain / contours', () => {
   it('traces closed rings around a single hill', () => {
     const lone: Terrain = {
       size: 400,
+      // No tilt and no micro-relief: this is a test of the tracer's geometry, and it
+      // wants a field whose contours are exactly rings.
+      tilt: { x: 0, y: 0 },
+      noiseSeed: 0,
       landforms: [{ kind: 'hill', x: 200, y: 200, radius: 120, amplitude: 20, rotation: 0, elongation: 1 }],
       points: [], lines: [], areas: [],
     };
@@ -212,6 +306,8 @@ describe('terrain / contours', () => {
   it('nests rings: a higher level lies inside a lower one', () => {
     const lone: Terrain = {
       size: 400,
+      tilt: { x: 0, y: 0 },
+      noiseSeed: 0,
       landforms: [{ kind: 'hill', x: 200, y: 200, radius: 150, amplitude: 24, rotation: 0, elongation: 1 }],
       points: [], lines: [], areas: [],
     };
@@ -259,8 +355,70 @@ describe('terrain / contours', () => {
     }
   });
 
+  it('stitches an open contour into one path, whichever end it is met from', () => {
+    // The regression this exists for: following segments only forwards recovers a closed
+    // ring from any starting point but shreds an open line, because the outer loop meets
+    // segments in cell order and usually enters a contour in its middle. A pure slope has
+    // exactly one contour per level and every one of them is open, so a count of paths is
+    // a count of failures.
+    const slope: Terrain = {
+      size: 300,
+      tilt: { x: 0.05, y: 0.02 },
+      noiseSeed: 0,
+      landforms: [], points: [], lines: [], areas: [],
+    };
+    const contours = contoursOf(sampleGrid(slope, 64), { interval: 5, resolution: 64 });
+    expect(contours.length).toBeGreaterThan(1);
+    const perLevel = new Map<number, number>();
+    for (const c of contours) {
+      expect(c.closed).toBe(false);
+      perLevel.set(c.level, (perLevel.get(c.level) ?? 0) + 1);
+    }
+    for (const [level, count] of perLevel) expect(count, `level ${level}`).toBe(1);
+  });
+
+  it('marks every fifth line as an index contour and no others', () => {
+    const contours = contoursOf(sampleGrid(make(21), 64), { interval: 5, resolution: 64 });
+    for (const c of contours) {
+      expect(c.index, `level ${c.level}`).toBe(Math.round(c.level / 5) % 5 === 0);
+    }
+  });
+
+  it('tags a hollow and leaves a knoll alone', () => {
+    // Without this the two are the same picture, and the relief drill asks a question its
+    // own card cannot answer.
+    const lone = (amplitude: number): Terrain => ({
+      size: 400,
+      tilt: { x: 0, y: 0 },
+      noiseSeed: 0,
+      landforms: [{ kind: 'hill', x: 200, y: 200, radius: 120, amplitude, rotation: 0, elongation: 1 }],
+      points: [], lines: [], areas: [],
+    });
+    const options = { interval: 5, resolution: 80 };
+    const knoll = contoursOf(sampleGrid(lone(20), 80), options);
+    const hollow = contoursOf(sampleGrid(lone(-20), 80), options);
+
+    expect(knoll.length).toBeGreaterThan(0);
+    expect(hollow.length).toBeGreaterThan(0);
+    expect(knoll.every((c) => c.tags.length === 0)).toBe(true);
+    expect(hollow.every((c) => c.tags.length > 0)).toBe(true);
+    // And every tag points into the hollow, which is where the ground falls away. The
+    // step is a fraction of the ring's own radius: a fixed one overshoots the centre of
+    // the innermost ring, which is a third of a metre across.
+    for (const c of hollow) {
+      for (const tag of c.tags) {
+        const radius = Math.hypot(tag.x - 200, tag.y - 200);
+        const moved = Math.hypot(tag.x + tag.dx * radius * 0.5 - 200, tag.y + tag.dy * radius * 0.5 - 200);
+        expect(moved).toBeLessThan(radius);
+      }
+    }
+  });
+
   it('flat ground has no contours', () => {
-    const flat: Terrain = { size: 200, landforms: [], points: [], lines: [], areas: [] };
+    const flat: Terrain = {
+      size: 200, tilt: { x: 0, y: 0 }, noiseSeed: 0,
+      landforms: [], points: [], lines: [], areas: [],
+    };
     expect(contoursOf(sampleGrid(flat, 20), { interval: 5, resolution: 20 })).toEqual([]);
   });
 });

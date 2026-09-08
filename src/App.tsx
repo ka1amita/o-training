@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Route, Switch, Link } from 'wouter';
 import { useHashLocation } from 'wouter/use-hash-location';
 import Home from './pages/Home.tsx';
@@ -5,6 +6,15 @@ import DrillPage from './pages/DrillPage.tsx';
 import MatchPage from './pages/MatchPage.tsx';
 import Progress from './pages/Progress.tsx';
 import { Router } from 'wouter';
+
+/**
+ * The map contact sheet, dev builds only.
+ *
+ * `import.meta.env.DEV` is replaced by a literal at build time, so this whole binding —
+ * and the dynamic import inside it — folds away and the page never reaches the bundle.
+ * A plain top-level import would still ship the module behind unreachable JSX.
+ */
+const DevMaps = import.meta.env.DEV ? lazy(() => import('./pages/DevMaps.tsx')) : null;
 
 export default function App() {
   // Hash routing: the app is deployed as static files, and a path-routed reload on
@@ -30,6 +40,13 @@ export default function App() {
             <Route path="/match" component={MatchPage} />
             <Route path="/match/join/:code" component={MatchPage} />
             <Route path="/progress" component={Progress} />
+            {DevMaps && (
+              <Route path="/dev/maps">
+                <Suspense fallback={<p className="pt-10 text-center text-muted">…</p>}>
+                  <DevMaps />
+                </Suspense>
+              </Route>
+            )}
             <Route>
               <p className="pt-10 text-center text-muted">Nothing here.</p>
             </Route>
