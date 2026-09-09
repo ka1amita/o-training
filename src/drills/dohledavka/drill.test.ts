@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import { symbolsPerCard } from './deck.ts';
 import { dohledavka as drill, orderFor, type DobbleRound, type Placed } from './drill.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: drill.bounds.min, max: drill.bounds.max });
-const gen = (seed: number, level: number) => drill.generate(seeded(seed), level);
+const maps: RoundContext = { maps: new GeneratedProvider() };
+const gen = (seed: number, level: number) => drill.generate(seeded(seed), level, maps);
 
 describe('dohledavka / generate', () => {
   it('is well formed at every level, for any seed', () => {

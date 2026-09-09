@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import { areasOf, linesOf, pointsOf, positionOf, type OMap } from '@/lib/terrain/omap.ts';
 import { CODE_OF } from '@/lib/terrain/semantics.ts';
@@ -11,7 +12,8 @@ import { CONTROL_NAMES, type ControlKind } from './features.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: drill.bounds.min, max: drill.bounds.max });
-const gen = (seed: number, level: number) => drill.generate(seeded(seed), level);
+const maps: RoundContext = { maps: new GeneratedProvider() };
+const gen = (seed: number, level: number) => drill.generate(seeded(seed), level, maps);
 
 /** Where the map itself says a feature of this kind is, ignoring the drill's own view. */
 function positionsOf(map: OMap, kind: ControlKind): { x: number; y: number }[] {

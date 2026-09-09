@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { Link, useParams } from 'wouter';
 import { drillById } from '@/drills/index.ts';
+import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
 import { seeded } from '@/lib/rng.ts';
 import {
   currentSeed, reduce, start, summarise,
@@ -54,10 +55,15 @@ function RunningSession({ drill, startLevel }: { drill: AnyDrill; startLevel: nu
   const level = state.staircase.level;
   const seed = currentSeed(state);
 
+  // The only provider there is for now. It is built here rather than inside a drill
+  // because which source a round runs on is a decision about the session, not the drill:
+  // a policy stored with progress will choose it (see docs/real-maps-architecture.md).
+  const ctx = useMemo<RoundContext>(() => ({ maps: new GeneratedProvider() }), []);
+
   // Regenerated only when the round actually changes; `Play` may re-render freely
   // without the item shifting under the player.
   const round = useMemo(() => {
-    const generated = drill.generate(seeded(seed), level);
+    const generated = drill.generate(seeded(seed), level, ctx);
     if (import.meta.env.DEV) {
       const problems = drill.wellFormed(generated);
       if (problems.length > 0) {
@@ -67,7 +73,7 @@ function RunningSession({ drill, startLevel }: { drill: AnyDrill; startLevel: nu
       }
     }
     return generated;
-  }, [drill, seed, level]);
+  }, [drill, seed, level, ctx]);
 
   const onDone = useCallback(
     (answers: unknown[]) => {

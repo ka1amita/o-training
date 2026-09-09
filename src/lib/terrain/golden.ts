@@ -1,5 +1,5 @@
-import { areasOf, linesOf, pointsOf, positionOf } from './omap.ts';
-import type { GeneratedMap } from './terrain.ts';
+import { areasOf, linesOf, pointsOf, positionOf, type OMap } from './omap.ts';
+import { AnalyticRelief } from './relief.ts';
 
 /**
  * A map reduced to **the generator's decisions**, for the golden hashes.
@@ -18,12 +18,15 @@ import type { GeneratedMap } from './terrain.ts';
  * See also `hashJson`, which quantises to six decimals so a hash pins the generator and
  * not the engine's last float bit.
  */
-export function goldenMap(map: GeneratedMap): unknown {
+export function goldenMap(map: OMap): unknown {
+  // Only the analytic relief has parameters to pin. An imported one is pinned by the
+  // bundle id it came from, which is a hash already.
+  const relief = map.relief instanceof AnalyticRelief ? map.relief : null;
   return {
     size: map.width,
-    tilt: { x: map.relief.tilt.x, y: map.relief.tilt.y },
-    noiseSeed: map.relief.noiseSeed,
-    landforms: map.relief.landforms.map((f) => ({
+    tilt: relief ? { x: relief.tilt.x, y: relief.tilt.y } : null,
+    noiseSeed: relief ? relief.noiseSeed : null,
+    landforms: (relief?.landforms ?? []).map((f) => ({
       kind: f.kind,
       x: f.x,
       y: f.y,

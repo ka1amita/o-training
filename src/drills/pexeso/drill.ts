@@ -1,7 +1,8 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
+import type { RoundContext, WindowRequirement } from '@/lib/maps/provider.ts';
 import { deriveSeed, seeded, type Rng } from '@/lib/rng.ts';
 import { pointsOf, positionOf, type Crop, type OMap, type Vec } from '@/lib/terrain/omap.ts';
-import { generateTerrain, type GeneratedMap, type TerrainParams } from '@/lib/terrain/terrain.ts';
+import { AnalyticRelief } from '@/lib/terrain/relief.ts';
 import Play from './Play.tsx';
 
 /**
@@ -23,7 +24,7 @@ export interface PexesoCard {
 
 export interface PexesoRound {
   readonly pairs: number;
-  readonly maps: readonly GeneratedMap[];
+  readonly maps: readonly OMap[];
   /** 2 * pairs cards, shuffled. */
   readonly cards: readonly PexesoCard[];
   /** Distance between a pair's two crop centres, in metres. */
@@ -62,16 +63,20 @@ export interface PexesoParams {
  * one contour and nothing else — two blank cards are a memory game about card position,
  * which is the one thing this drill is not for.
  */
-function terrainFor(level: number): TerrainParams {
+function requirementFor(level: number): WindowRequirement {
   const clamped = Math.min(10, Math.max(1, level));
   const scale = (low: number, high: number) =>
     Math.round(low + ((high - low) * (clamped - 1)) / 9);
   return {
     size: 300,
-    landforms: scale(6, 10),
-    points: scale(14, 24),
-    lines: scale(2, 3),
-    areas: scale(6, 12),
+    needsRelief: false,
+    minControlSites: paramsFor(level).pairs,
+    minFeatures: {
+      landform: scale(6, 10),
+      point: scale(14, 24),
+      line: scale(2, 3),
+      area: scale(6, 12),
+    },
     rides: 2,
     clusters: scale(3, 6),
   };
@@ -85,12 +90,16 @@ export function paramsFor(level: number): PexesoParams {
 }
 
 /** Somewhere both crops can reach without leaving the map. */
-function controlFor(rng: Rng, map: GeneratedMap, halfSpan: number): Vec {
+function controlFor(rng: Rng, map: OMap, halfSpan: number): Vec {
   const lo = halfSpan;
   const hi = map.width - halfSpan;
   const candidates = [
     ...pointsOf(map).map(positionOf),
-    ...map.relief.landforms.map((f) => ({ x: f.x, y: f.y })),
+    // A summit is worth finding too. An imported map answers this from its analysis
+    // instead; until then only the analytic relief has landforms to offer.
+    ...(map.relief instanceof AnalyticRelief
+      ? map.relief.landforms.map((f) => ({ x: f.x, y: f.y }))
+      : []),
   ].filter((f) => f.x >= lo && f.x <= hi && f.y >= lo && f.y <= hi);
   // Anchoring on a feature is what makes the control worth finding. A map whose features
   // all sit near the edge still has to produce a pair, so the fallback is the interior.
@@ -107,21 +116,23 @@ export const pexeso = defineDrill<PexesoRound, PexesoAnswer>({
   bounds: { min: 1, max: 10 },
   roundsPerSession: 4,
 
-  generate(rng: Rng, level: number): PexesoRound {
+  generate(rng: Rng, level: number, ctx: RoundContext): PexesoRound {
     const params = paramsFor(level);
     const shift = CROP_SIZE * params.shiftFraction;
     // Both crop centres sit shift/2 from the control, so the control stays inside both
     // as long as that is under half a crop — which the fraction cap guarantees.
     const halfSpan = CROP_SIZE / 2 + shift / 2;
 
-    const maps: GeneratedMap[] = [];
+    const maps: OMap[] = [];
     const cards: PexesoCard[] = [];
 
     for (let pairId = 0; pairId < params.pairs; pairId++) {
       // Each pair gets its own stream, so a pair's terrain does not depend on how many
       // pairs came before it — the same reason session rounds derive their seeds.
       const local = seeded(deriveSeed(rng.next(), pairId));
-      const map = generateTerrain(local, terrainFor(level));
+      const picked = ctx.maps.pick(local, requirementFor(level));
+      if (!picked) throw new Error('pexeso: no map for this level');
+      const map = picked.map;
       maps.push(map);
 
       const control = controlFor(local, map, halfSpan);

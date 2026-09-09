@@ -8,8 +8,8 @@
  *
  * ## Why this cannot be seeded per sibling
  *
- * The noise is a function of world position and one seed carried on the terrain, and
- * `perturb` copies that seed unchanged. Siblings therefore share the noise exactly, and
+ * The noise is a function of world position and one seed carried on the relief, and a
+ * warp copies that seed unchanged. Siblings therefore share the noise exactly, and
  * `maxHeightDifference` between them stays zero everywhere the moved landform does not
  * reach — which is the whole point of giving the bumps compact support. Noise drawn from
  * the `Rng` during generation would differ between siblings and make every distractor

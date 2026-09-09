@@ -1,4 +1,5 @@
 import type { FC } from 'react';
+import type { RoundContext } from '@/lib/maps/provider.ts';
 import type { Rng } from '@/lib/rng.ts';
 import type { StaircaseBounds } from '@/lib/staircase.ts';
 
@@ -40,8 +41,14 @@ export interface PlayProps<Round, Answer> {
  * bug in the drill, not a gap in the tests.
  */
 export interface Drill<Round, Answer> extends DrillMeta {
-  /** Pure. The rng is a parameter; nothing here reaches for Math.random or Date.now. */
-  generate(rng: Rng, level: number): Round;
+  /**
+   * Pure. The rng is a parameter; nothing here reaches for Math.random or Date.now.
+   *
+   * `ctx` is where a terrain drill gets its ground: it asks a `MapProvider` for a window
+   * that meets its requirement rather than calling the generator, so which source the
+   * round runs on is decided outside the drill. The symbol drills ignore it.
+   */
+  generate(rng: Rng, level: number, ctx: RoundContext): Round;
   /** Pure. Returns the invariants this round violates — empty means well formed. */
   wellFormed(round: Round): string[];
   /** Pure. */

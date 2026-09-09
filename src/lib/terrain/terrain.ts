@@ -9,7 +9,7 @@ import { areaOutline } from './shapes.ts';
 export type { Vec } from './omap.ts';
 
 /**
- * Terrain is a **list of named features**, not a field of noise.
+ * A generated map is a **list of named features**, not a field of noise.
  *
  * Fractal noise would be less code and the wrong model. Three things follow from features
  * that would not follow from noise:
@@ -19,7 +19,7 @@ export type { Vec } from './omap.ts';
  *    and a distractor that differs everywhere teaches nothing about reading detail.
  *  - The map reads as a map, in the vocabulary an orienteer already has: knoll, marsh,
  *    re-entrant, path.
- *  - The invariants are checkable. "Features do not collide" and "the perturbation moved
+ *  - The invariants are checkable. "Features do not collide" and "the edit moved
  *    something by at least this much" are statements about a list.
  *
  * World units are metres and the terrain is square.

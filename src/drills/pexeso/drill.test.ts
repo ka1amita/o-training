@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import { goldenMap } from '@/lib/terrain/golden.ts';
 import { pexeso as drill, paramsFor, attemptBudget, CROP_SIZE, type PexesoRound } from './drill.ts';
@@ -7,7 +8,8 @@ import { initialState, pexesoReduce, type PexesoEvent, type PexesoState } from '
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: 1, max: 10 });
-const gen = (seed: number, level: number) => drill.generate(seeded(seed), level);
+const maps: RoundContext = { maps: new GeneratedProvider() };
+const gen = (seed: number, level: number) => drill.generate(seeded(seed), level, maps);
 
 /**
  * The generator's decisions, not the shape of the round. See `goldenMap` — the field

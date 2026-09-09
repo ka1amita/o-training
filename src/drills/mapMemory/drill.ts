@@ -1,9 +1,9 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
 import { siblings } from '@/drills/shared/siblings.ts';
+import type { RoundContext, WindowRequirement } from '@/lib/maps/provider.ts';
 import type { Rng } from '@/lib/rng.ts';
 import { difference, type Variant } from '@/lib/terrain/edits.ts';
 import type { Crop, OMap } from '@/lib/terrain/omap.ts';
-import { generateTerrain, type TerrainParams } from '@/lib/terrain/terrain.ts';
 import Play from './Play.tsx';
 
 /**
@@ -51,16 +51,21 @@ export function paramsFor(level: number): MemoryParams {
   };
 }
 
-function terrainFor(level: number): TerrainParams {
+/** Some of everything, in a 300 m map the drill then shows 150 m of. */
+export function requirementFor(level: number): WindowRequirement {
   const clamped = Math.min(10, Math.max(1, level));
   const scale = (low: number, high: number) =>
     Math.round(low + ((high - low) * (clamped - 1)) / 9);
   return {
     size: 300,
-    landforms: scale(5, 9),
-    points: scale(10, 18),
-    lines: scale(2, 3),
-    areas: scale(4, 8),
+    needsRelief: false,
+    crop: CROP_SIZE,
+    minFeatures: {
+      landform: scale(5, 9),
+      point: scale(10, 18),
+      line: scale(2, 3),
+      area: scale(4, 8),
+    },
     rides: 2,
     // Fewer than the pexeso map on purpose. The question here is which *one* feature
     // moved, and a rock field of twenty near-identical crags is a needle in a haystack
@@ -77,15 +82,11 @@ export const mapMemory = defineDrill<MapMemoryRound, MapMemoryAnswer>({
   bounds: { min: 1, max: 10 },
   roundsPerSession: 10,
 
-  generate(rng: Rng, level: number): MapMemoryRound {
+  generate(rng: Rng, level: number, ctx: RoundContext): MapMemoryRound {
     const params = paramsFor(level);
-    const base = generateTerrain(rng, terrainFor(level));
-
-    const crop: Crop = {
-      x: rng.range(0, base.width - CROP_SIZE),
-      y: rng.range(0, base.width - CROP_SIZE),
-      size: CROP_SIZE,
-    };
+    const picked = ctx.maps.pick(rng, requirementFor(level));
+    if (!picked) throw new Error('map memory: no map for this level');
+    const { map: base, crop } = picked;
 
     return {
       // A landform is warped and everything else is moved: between them they are the

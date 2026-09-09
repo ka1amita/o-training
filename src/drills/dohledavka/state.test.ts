@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import { GeneratedProvider } from '@/lib/maps/provider.ts';
 import { seeded } from '@/lib/rng.ts';
 import { dohledavka as drill } from './drill.ts';
 import { dobbleReduce, initialState, type DobbleEvent, type DobbleState } from './state.ts';
 
-const round = drill.generate(seeded(3), 5);
+const round = drill.generate(seeded(3), 5, { maps: new GeneratedProvider() });
 const other = round.cards[0].symbols.map((s) => s.symbolId).filter((id) => id !== round.shared);
 const tap = (symbolId: string): DobbleEvent => ({ type: 'tap', symbolId });
 const run = (events: DobbleEvent[], from: DobbleState = initialState) =>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'wouter';
 import { CardView } from '@/drills/dohledavka/Cards.tsx';
 import { dohledavka } from '@/drills/dohledavka/drill.ts';
+import { GeneratedProvider } from '@/lib/maps/provider.ts';
 import { deriveSeed, seeded } from '@/lib/rng.ts';
 import { helloFor, hostState, joinerState, peerReduce, type PeerEvent, type PeerState } from '@/net/peer.ts';
 import { decode, encode, type Side } from '@/net/protocol.ts';
@@ -88,7 +89,15 @@ function useMatch(initial: PeerState, transport: Transport | null) {
 /** Both peers derive the round from the shared seed; nothing about it crosses the wire. */
 function useRound(state: PeerState) {
   return useMemo(
-    () => (state.started ? dohledavka.generate(seeded(deriveSeed(state.seed, state.round)), state.level) : null),
+    () =>
+      state.started
+        ? dohledavka.generate(
+            seeded(deriveSeed(state.seed, state.round)),
+            state.level,
+            // Dohledavka draws symbols, not ground, and ignores this.
+            { maps: new GeneratedProvider() },
+          )
+        : null,
     [state.started, state.seed, state.round, state.level],
   );
 }

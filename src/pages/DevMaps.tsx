@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CardView } from '@/drills/mapDohledavka/Cards.tsx';
 import { mapDohledavka } from '@/drills/mapDohledavka/drill.ts';
 import { CONTROL_NAMES } from '@/drills/mapDohledavka/features.ts';
+import { GeneratedProvider } from '@/lib/maps/provider.ts';
 import { seeded } from '@/lib/rng.ts';
 import MapView from '@/lib/terrain/MapView.tsx';
 import Relief from '@/lib/terrain/Relief.tsx';
@@ -69,7 +70,7 @@ export default function DevMaps() {
       <div className="flex flex-col gap-1">
         <div className="text-xs text-muted">mapova dohledavka, level {level}</div>
         {[1, 2].map((seed) => {
-          const round = mapDohledavka.generate(seeded(seed), level);
+          const round = mapDohledavka.generate(seeded(seed), level, { maps: new GeneratedProvider() });
           return (
             <div key={seed} className="grid grid-cols-2 gap-2">
               {round.cards.map((card, i) => (

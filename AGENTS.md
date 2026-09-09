@@ -17,6 +17,11 @@ plus one line in `src/drills/index.ts`; nothing else enumerates drills.
 depend on that, and so does P2P Dohledávka — both peers derive the same deck from a shared
 seed instead of sending one.
 
+It also takes a `RoundContext`, and that is where a terrain drill gets its ground: it
+states a `WindowRequirement` and a `MapProvider` satisfies it. The generator is one
+provider; a library of imported maps will be another. So a round is a function of
+`(seed, level, provider.id)`, which is the third thing two peers will have to agree on.
+
 ## Testing
 
 1. **Properties** (`fast-check`). The invariant everywhere: **exactly one correct answer
@@ -130,13 +135,15 @@ instantly without being able to name.
 - A stream may begin inland — that is a spring — but a path, fence or ride crosses the map.
   Where a stream sinks, a marsh is drawn; that marsh is the one area exempt from
   `suitsArea`, and the tests exempt it by matching the stream's last point.
-- `siblings` **prefers** a plausible perturbation and settles for a merely visible one. A
-  hard filter pushes rounds onto the `distance * 2.5` fallback, and a distractor far bigger
+- `siblings` **prefers** a plausible edit and settles for a merely visible one. A hard
+  filter pushes rounds onto the `distance * 2.5` fallback, and a distractor far bigger
   than the level asked for is a worse question than a marsh on a slope.
-- `perturb` takes `within`, and map memory passes its window. Choosing uniformly over the
-  map and retrying was fine while features were spread evenly; once they came in clusters,
-  a window that missed the rocky band held almost nothing and the retries ran out — one
-  round in three had a distractor identical to the answer.
+- An **`EditSpec` takes `within`, and map memory passes its window.** Choosing uniformly
+  over the map and retrying was fine while features were spread evenly; once they came in
+  clusters, a window that missed the rocky band held almost nothing and the retries ran
+  out — one round in three had a distractor identical to the answer. `proposeEdit` narrows
+  its candidate pools to what the window can show, and falls back to the whole list only
+  when the window holds none of them.
 - **Point features cluster.** Uniform placement with a minimum separation is *more even
   than random*, and that evenness — more than the count — is what read as generated.
   Half the fields are crags on a slope break, half boulders on any ground: putting every
@@ -144,6 +151,11 @@ instantly without being able to name.
 - Rides are the **compartment grid** and are not a difficulty knob: a managed forest has
   one, and a map of one without it reads as heath. They are dead straight because they
   were cut; `tracePath` is for what was walked.
+- That fallback is **not checked for visibility**, so about one map-memory round in five
+  hundred has two right answers and the property tests flake at that rate (`seed
+  2492758438, level 3`). It pre-dates the `OMap` refactor and reproduces identically
+  before and after it; fixing it changes which distractor those rounds get, and re-pins
+  the goldens.
 
 **Cartography**
 

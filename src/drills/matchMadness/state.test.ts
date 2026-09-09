@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import { GeneratedProvider } from '@/lib/maps/provider.ts';
 import { seeded } from '@/lib/rng.ts';
 import { matchMadness as drill } from './drill.ts';
 import {
@@ -7,7 +8,7 @@ import {
   type MatchEvent, type MatchState,
 } from './state.ts';
 
-const round = drill.generate(seeded(7), 1);
+const round = drill.generate(seeded(7), 1, { maps: new GeneratedProvider() });
 const tap = (kind: 'symbol' | 'name', value: string): MatchEvent => ({ type: 'tap', kind, value });
 const run = (events: MatchEvent[], from: MatchState = initialState) =>
   events.reduce((s, e) => matchReduce(round, s, e), from);

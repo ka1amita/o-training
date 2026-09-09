@@ -1,9 +1,10 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
 import { siblings } from '@/drills/shared/siblings.ts';
+import type { RoundContext, WindowRequirement } from '@/lib/maps/provider.ts';
 import type { Rng } from '@/lib/rng.ts';
 import { difference, type Variant } from '@/lib/terrain/edits.ts';
 import { wholeMap, type OMap } from '@/lib/terrain/omap.ts';
-import { generateTerrain, paramsFor as terrainParams } from '@/lib/terrain/terrain.ts';
+import { paramsFor as terrainParams } from '@/lib/terrain/terrain.ts';
 import Play from './Play.tsx';
 
 /**
@@ -33,6 +34,22 @@ export const OPTIONS = 4;
 /** Below this a moved landform is not visible in the shading. */
 export const MIN_HEIGHT_DIFFERENCE = 1.5;
 
+/**
+ * A calmer map than the pexeso one: this drill is about the shape of the ground, and a
+ * busy map hides it under detail that carries no relief at all. The zeros are exact for
+ * the generator, which makes what it is asked for; a real map is cropped, not emptied.
+ */
+export function requirementFor(level: number): WindowRequirement {
+  return {
+    size: 380,
+    needsRelief: true,
+    relief: { minRange: 20, maxRange: 40 },
+    minFeatures: { landform: terrainParams(level, 380).landforms, point: 0, line: 0, area: 0 },
+    rides: 0,
+    clusters: 0,
+  };
+}
+
 export function distanceFor(level: number): number {
   const clamped = Math.min(10, Math.max(1, level));
   // Nearer means harder: the two reliefs differ by less.
@@ -47,18 +64,12 @@ export const contours = defineDrill<ContoursRound, ContoursAnswer>({
   bounds: { min: 1, max: 10 },
   roundsPerSession: 10,
 
-  generate(rng: Rng, level: number): ContoursRound {
-    // A calmer map than the pexeso one: this drill is about the shape of the ground, and
-    // a busy map hides it under detail that carries no relief at all.
-    const base = generateTerrain(rng, {
-      ...terrainParams(level, 380),
-      points: 0,
-      lines: 0,
-      areas: 0,
-      rides: 0,
-      clusters: 0,
-    });
-    return siblings(rng, base, OPTIONS, {
+  generate(rng: Rng, level: number, ctx: RoundContext): ContoursRound {
+    const picked = ctx.maps.pick(rng, requirementFor(level));
+    // Only a provider that can decline returns null, and one that declines everything is
+    // a misconfiguration rather than a round to muddle through.
+    if (!picked) throw new Error('contours: no map with relief for this level');
+    return siblings(rng, picked.map, OPTIONS, {
       distance: distanceFor(level),
       ops: ['warp'],
       minReliefDelta: MIN_HEIGHT_DIFFERENCE,

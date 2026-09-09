@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
 import { seeded } from '@/lib/rng.ts';
 import { mapDohledavka as drill } from './drill.ts';
 import type { ControlKind } from './features.ts';
@@ -7,7 +8,8 @@ import {
   initialState, mapDobbleReduce, type MapDobbleEvent, type MapDobbleState,
 } from './state.ts';
 
-const round = drill.generate(seeded(3), 6);
+const maps: RoundContext = { maps: new GeneratedProvider() };
+const round = drill.generate(seeded(3), 6, maps);
 const decoy = round.cards[0].controls.find((c) => c.kind !== round.shared)!.kind;
 const otherDecoy = round.cards[1].controls.find((c) => c.kind !== round.shared)!.kind;
 

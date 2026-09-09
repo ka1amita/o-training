@@ -1,6 +1,7 @@
 # Real orienteering maps beside generated ones
 
-A design note. Nothing here is implemented; it describes how the terrain engine would
+A design note. **Steps 0–3 of section 7 are implemented** — the engine refactor, no new
+capability; steps 4–6 are still a description. It describes how the terrain engine would
 change so a drill can run on a real map — an OpenOrienteering Mapper `.xmap`, an OCAD
 `.ocd`, or a plain image exported from Livelox — as well as on the generated one, and
 switch between them per drill, per round, or per member tier without the drills noticing.
@@ -490,21 +491,15 @@ the comparison is one page.
 
 ## 7. Migration, in steps that each leave the suite green
 
-0. **Codes on kinds.** Add `code` to the generator's features and the `Semantics` table
-   with the sixteen codes it emits; rewrite `suitsArea`/`suitsPoint` to read the table.
-   Behaviour identical; golden hashes re-pinned **once, on purpose** because the objects
-   gained a field (they are quantised to pin the generator, and this is a generator
-   change).
-1. **`Relief` interface.** `AnalyticRelief` wraps `tilt`/`noiseSeed`/`landforms`;
-   `heightAt`, `sampleGrid`, `readGround`, `Relief.tsx`, `contours.ts` consume it.
-   `Terrain` becomes `OMap` with `relief: AnalyticRelief`. Pure rename plus one indirection.
-2. **Edits.** `perturb` → `proposeEdit` + `applyEdits`; `siblings` returns
-   `{ base, variants: Variant[] }`; `differsWithin` → `difference`. Property tests carry
-   over one to one ("exactly one correct answer" is `difference().visible` for every
-   distractor). Warp implemented for `AnalyticRelief` only, by moving the nearest
-   landform — identical output to today.
-3. **Provider.** `RoundContext` threaded through `Drill.generate` and `DrillPage`;
-   `GeneratedProvider` is the only one. Goldens unchanged.
+0. **Codes on kinds.** ✅ Done. `semantics.ts` holds the table; `suitsArea`/`suitsPoint`
+   are two lines over `suits(code, ground, p)`. Golden hashes re-pinned **once, on
+   purpose** because the objects gained a field.
+1. **`Relief` interface.** ✅ Done. `relief.ts` and `omap.ts`; `MapView` styles by code
+   through a table in `isom.ts`.
+2. **Edits.** ✅ Done. `edits.ts`; `siblings` returns `{ base, variants, correctIndex }`.
+3. **Provider.** ✅ Done. `lib/maps/provider.ts`; `GeneratedProvider` is the only one, and
+   `DrillPage` and `MatchPage` build it. Goldens unchanged from step 0 on, which is what
+   says the refactor changed no behaviour.
 4. **Bundle + pipeline.** `scripts/import-map.mjs` for `.xmap` with an optional DEM;
    `LibraryProvider`; `GridRelief` and `ContourRelief` with `warped`; `MapView` styling
    by code; a library row on `#/dev/maps`. The first real bundle is Mapper's own
@@ -516,6 +511,34 @@ the comparison is one page.
 
 Steps 0–3 are a refactor of the existing engine with no new capability and can ship on
 their own. Steps 4–6 are the feature.
+
+### Where the implementation departs from the note above
+
+- **A warp does not carry the features standing on it by default** (`Warp.carries`).
+  §3.1 is right for a real map — a boulder drawn on a knoll belongs on the knoll wherever
+  it goes — but today's landform perturbation moves the bump and leaves the symbols, so
+  switching it on rewrites every map-memory round and re-pins a golden that exists to
+  prove steps 0–3 changed nothing. It is implemented and tested behind the flag; step 4
+  is the place to turn it on and re-pin deliberately.
+- **`Warp` is declared in `relief.ts`**, not with the edits, because `Relief.warped` takes
+  one and a relief must not depend on the edit vocabulary. `edits.ts` re-exports it.
+- **The goldens hash `goldenMap`**, an explicit projection of the generator's decisions,
+  rather than the round objects. Hashing the live objects would have forced a re-pin at
+  every step of the refactor, which is exactly what makes a re-pin meaningless.
+- **`WindowRequirement.minFeatures` is keyed by geometry** — landform, point, line, area —
+  not by semantic family. That is the split the generator makes, and keying it by family
+  would not map back to `TerrainParams`. It also carries `crop`, the sub-window a drill
+  shows, because map memory drew that window from the same rng stream and the provider
+  now has to draw it in the same place.
+- **`Relief` has no extent.** `sampleGrid(n)` returns a `Grid` that knows its own size,
+  and `maxHeightDifference` compares two sampled grids, so nothing needs a `size` on the
+  interface — which is what a non-square imported map will want.
+- **Generated areas stay parametric**, as §7 allows: `Feature.shape` holds centre, radii
+  and rotation beside the outline traced from them, and `areaOutline` still seeds its
+  wander from the generator's `kind` rather than the code so that no existing map
+  reshapes.
+- **`OMap.id` is `'generated'`**, not `'generated:<seed>'`: the generator is handed an
+  `Rng`, not a seed, and drawing one for an id would move every round after it.
 
 ---
 

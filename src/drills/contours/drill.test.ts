@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import { maxHeightDifference } from '@/lib/terrain/height.ts';
 import { goldenMap } from '@/lib/terrain/golden.ts';
-import type { GeneratedMap } from '@/lib/terrain/terrain.ts';
 import {
   contours as drill, distanceFor, OPTIONS, MIN_HEIGHT_DIFFERENCE, type ContoursRound,
 } from './drill.ts';
@@ -14,11 +14,12 @@ import { applyEdits, difference } from '@/lib/terrain/edits.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: 1, max: 10 });
-const gen = (seed: number, level: number) => drill.generate(seeded(seed), level);
+const maps: RoundContext = { maps: new GeneratedProvider() };
+const gen = (seed: number, level: number) => drill.generate(seeded(seed), level, maps);
 
 /** What a round would actually show, made from its edits. */
 const materialise = (round: ContoursRound | MapMemoryRound) =>
-  round.variants.map((v) => applyEdits(v.base, v.edits) as GeneratedMap);
+  round.variants.map((v) => applyEdits(v.base, v.edits));
 
 /**
  * The generator's decisions, not the shape of the round. See `goldenMap` — the field
@@ -161,7 +162,7 @@ describe('contours / score', () => {
 });
 
 describe('map memory / generate', () => {
-  const memGen = (seed: number, level: number) => mapMemory.generate(seeded(seed), level);
+  const memGen = (seed: number, level: number) => mapMemory.generate(seeded(seed), level, maps);
   const goldenMemory = (round: MapMemoryRound) => ({
     options: materialise(round).map(goldenMap),
     correctIndex: round.correctIndex,
