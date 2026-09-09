@@ -46,6 +46,16 @@ export function memoryStore(seed: Record<string, unknown> = {}): KeyValue {
 
 const keyFor = (drillId: string) => `drill:${drillId}`;
 
+/**
+ * Where the map policy is kept.
+ *
+ * The key lives here because this module owns the key space — `clearAll` is the thing that
+ * has to know every key the training record is made of — while what the value *means* is
+ * `maps/policy.ts`, which reads and writes it. Splitting it the other way would drag the
+ * providers, and through them the drills, into the storage module.
+ */
+export const POLICY_KEY = 'policy';
+
 export async function loadProgress(kv: KeyValue, drillId: string): Promise<DrillProgress> {
   const stored = await kv.get<DrillProgress>(keyFor(drillId));
   // Storage can be cleared, downgraded, or written by an older build. A missing or
@@ -72,7 +82,16 @@ export async function saveSession(
   return next;
 }
 
+/**
+ * Erase the training record: every drill's progress, and the map policy with it.
+ *
+ * The policy goes because it is a choice this device made and the screen offering to erase
+ * everything should not quietly keep one. Cached map bundles (`map:`) do **not** — they are
+ * a download, not a record, and re-fetching forty megabytes on a phone in a forest is not
+ * what "erase my progress" asks for. The Progress screen says both.
+ */
 export async function clearAll(kv: KeyValue): Promise<void> {
   const all = await kv.keys();
-  await Promise.all(all.filter((k) => k.startsWith('drill:')).map((k) => kv.del(k)));
+  const mine = (k: string) => k.startsWith('drill:') || k === POLICY_KEY;
+  await Promise.all(all.filter(mine).map((k) => kv.del(k)));
 }

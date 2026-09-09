@@ -45,6 +45,15 @@ export function libraryRequirements(): WindowRequirement[] {
 export const BUNDLED_MAPS: readonly string[] = ['forest-sample.json'];
 
 /**
+ * A bundle name, as somewhere to fetch it from.
+ *
+ * `BASE_URL` is `/` in dev and `/ob-training/` on Pages, which is exactly why a `MapPolicy`
+ * stores the **name** and never the URL: a policy written under one base would name nothing
+ * under the other, and the player's maps would quietly stop loading after a deploy.
+ */
+export const bundleUrl = (name: string): string => `${import.meta.env.BASE_URL}maps/${name}`;
+
+/**
  * Bundles kept beside progress, under their own prefix.
  *
  * `drill:` is progress and `map:` is a decoded map, and `clearAll` still deletes only the
