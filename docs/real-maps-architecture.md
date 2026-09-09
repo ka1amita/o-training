@@ -1,7 +1,7 @@
 # Real orienteering maps beside generated ones
 
-A design note. **Steps 0–3 of section 7 are implemented** — the engine refactor, no new
-capability; steps 4–6 are still a description. It describes how the terrain engine would
+A design note. **Steps 0–4 of section 7 are implemented** — the engine refactor and the
+offline import pipeline; steps 5 and 6 are still a description. It describes how the terrain engine would
 change so a drill can run on a real map — an OpenOrienteering Mapper `.xmap`, an OCAD
 `.ocd`, or a plain image exported from Livelox — as well as on the generated one, and
 switch between them per drill, per round, or per member tier without the drills noticing.
@@ -500,17 +500,21 @@ the comparison is one page.
 3. **Provider.** ✅ Done. `lib/maps/provider.ts`; `GeneratedProvider` is the only one, and
    `DrillPage` and `MatchPage` build it. Goldens unchanged from step 0 on, which is what
    says the refactor changed no behaviour.
-4. **Bundle + pipeline.** `scripts/import-map.mjs` for `.xmap` with an optional DEM;
-   `LibraryProvider`; `GridRelief` and `ContourRelief` with `warped`; `MapView` styling
-   by code; a library row on `#/dev/maps`. The first real bundle is Mapper's own
-   `examples/src/forest sample.xmap` (GPL, fine for a dev fixture, not for shipping).
+4. **Bundle + pipeline.** ✅ Done. `maps/bundle.ts` and `maps/codec.ts`;
+   `scripts/import-map.mjs` over the tested stages in `maps/import/`; `LibraryProvider`
+   and `loadLibrary`; `GridRelief` and `ContourRelief` with `warped`; a library row on
+   `#/dev/maps`. The first real bundle is Mapper's own `examples/src/forest sample.xmap`
+   (GPL, a dev fixture, not shipping cartography): 538 objects, 36 codes, all of them
+   resolved, 41 contours at 5 m over 70 m of relief, 378 kB. `Warp.carries` was switched
+   on and the `siblings` fallback fixed in the same commit, which is the deliberate
+   re-pin step 3 promised; the goldens have not moved since.
 5. **Raster tier.** Image + world file → mask → `RasterLayer`; pexeso and map memory over
    image-only maps; contours drill declines them.
 6. **Policy.** `MapPolicy` in the store, a settings screen, `MixedProvider`; `hello`
    carries the policy.
 
 Steps 0–3 are a refactor of the existing engine with no new capability and can ship on
-their own. Steps 4–6 are the feature.
+their own. Step 4 is the feature; 5 and 6 extend it.
 
 ### Where the implementation departs from the note above
 
@@ -542,6 +546,49 @@ their own. Steps 4–6 are the feature.
   reshapes.
 - **`OMap.id` is `'generated'`**, not `'generated:<seed>'`: the generator is handed an
   `Rng`, not a seed, and drawing one for an id would move every round after it.
+
+### Step 4, and where it departs from §1 and §4
+
+- **One `.xmap` parser, not two.** §1.1 says `DOMParser` in the browser and something else
+  in the pipeline. That is two readers of one subset, and the day they disagree a bundle
+  imported on a laptop and one imported in the browser stop having the same content hash —
+  which is the only thing that hash is for. `maps/import/xml.ts` is a tokenizer over
+  exactly what Mapper emits, used in both places; a browser DOM would plug in behind
+  `XmlNode` rather than beside it.
+- **SHA-256 and base64 are written out** (`maps/codec.ts`) rather than taken from the
+  platform, for the same reason plus one more: `crypto.subtle` is async and everything
+  that reads a map here is not.
+- **`saveBundle` takes an `OMap`**, so `OMap` gained `meta` and `windows`. Both are facts
+  about a map that came from a file rather than from a seed — where it came from, and
+  which of its ground answers which drill's question — and the alternative was a second
+  type carried beside every map for the writer's convenience.
+- **A map is stored square**, padded to its longer side. `Crop` is square, `wholeMap`
+  reads `width`, and every drill compares its window against `width`: widening all of that
+  for the first bundle would have been a change to five files with no test that could fail.
+  The windows are scored, and empty padding scores nothing.
+- **Landform candidates are curvature, not extrema** (§4.1 stage 4 says "local extrema").
+  A surveyed hillside has almost none: its landforms are spurs and re-entrants, which are
+  where the ground bends. Two candidates became fifty-four.
+- **Contour levels are solved as a parity relation plus a maximum spanning tree**, rather
+  than the constraint propagation over a nesting tree §1.4 describes. Nesting only relates
+  *closed* contours and the forest sample has three of them out of sixty-nine; the transect
+  constraint — along any line across the slope the levels are monotone — is what actually
+  ties a hillside together, and point-in-polygon nesting survives only where it is needed,
+  for finding the innermost rings to lift a summit onto.
+- **`ContourRelief.warped` does not re-rasterise from the moved lines**, as §3.1 implies.
+  It displaces the vertices forward and resamples the grid through the same field's
+  inverse. Re-rasterising is a lossy round trip *everywhere*, including outside the
+  support, which would leave a sibling differing over the whole map — the one thing compact
+  support exists to prevent.
+- **The generated maps still carry no `analysis`**, so the `instanceof AnalyticRelief`
+  fallbacks in `edits.ts` and pexeso's `controlFor` stay. Filling it would change which
+  ground a warp picks up on every generated round, and step 4's whole discipline after its
+  first commit was that the goldens do not move again. Step 6 is the place, alongside
+  whatever else re-pins them.
+- **`Colour` gained `white`.** On an ISOM map white is not the absence of ink, it is
+  runnable forest, and an imported symbol drawn in it is one meant not to show.
+- **`RasterLayer` and `MapBundle.raster` are declared and unfilled**, as §2.2 allows;
+  step 5 fills them.
 
 ---
 

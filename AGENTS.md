@@ -160,6 +160,75 @@ instantly without being able to name.
   first draw is still 2.5x, so a round whose old fallback happened to be visible kept the
   distractor it had.
 
+**Real maps**
+
+- **A bundle is never in the precache.** `vite.config.ts`'s `globPatterns` deliberately
+  does not list `json`, and a test asserts it: a cold offline launch has to fetch the whole
+  precache before it can show anything, and one map with a height field is bigger than the
+  entire app. Bundles are fetched on demand and cached in IndexedDB under `map:`, beside
+  `drill:` and never instead of it — `clearAll` still deletes only progress, because
+  "clear my progress" does not mean "re-download a map in a forest".
+- **`SEMANTICS` is ISOM 2000 numbering**, which is what the generator's codes already
+  were. Two of them are not: **508** is a narrow ride here and a less distinct small path
+  in the standard, **516** a fence here and a power line there. They cannot move — every
+  golden is over generated features carrying them — so `maps/import/codes.ts` aliases the
+  *imported* codes out of the way instead. That table applies only to a symbol set checked
+  symbol by symbol (`ISOM2000`); anything else passes through unchanged, because a guessed
+  alias turns a power line into a fence and an unaliased code still draws.
+- **An unknown code keeps its colour.** `Feature.colour` carries the class the source
+  inked it in, and `styleFor` falls back to it. ~120 ISOM symbols exist, the table knows
+  92, and a map missing its buildings is not the map the surveyor drew. A *known* code
+  carries no colour: the table owns that, and storing it twice is two places to disagree.
+- **A map is stored square**, padded to its longer side, because `Crop` is square and
+  every drill checks its window against `width`. Nothing is framed on the padding: the
+  windows are scored and empty ground scores nothing. Landform candidates are clipped to
+  the ground the surveyor drew, since a reconstructed surface runs on smoothly into the
+  padding and invents a hollow there.
+- **`.xmap` conventions that produce a wrong map rather than an error.** Coordinates are
+  1/1000 mm of paper, y down, so `metres = coord x scale / 1e6`. Flag 1 is a curve start
+  and the next two coords are its Bezier controls — ignore it and you draw the control
+  net. Flag 16 ends a *part*: the next ring of an area, or the next piece of a line, and
+  joining a line across it draws a path over the gap the surveyor left. Mapper nests whole
+  `<symbol>`s inside a line symbol for its decorations, and `<object>`s inside those, so
+  ask by parent (`childrenOf`) and not by name. An area object's `<pattern>` carries a
+  `<coord>` of its own that is not geometry; counting it stretched the forest sample from
+  554 x 510 m to 1246 x 781 m.
+- **Colours are classified from the ink, not the name.** Mapper's English names would do
+  it in a line, and a map drawn in Czech would then fall back to black for every symbol the
+  table does not know. Brown and yellow are the only pair needing care and they part on the
+  magenta-to-yellow ratio.
+- **Contour level assignment gives up rather than guessing.** A map whose relief is wrong
+  is worse than one with none: the contours drill would hand out cards whose answer is a
+  hillside that is not there, and nothing downstream could tell. Every check returns
+  `{ ok: false, reason }` and the pipeline says so on stderr. Three things a real map
+  taught: contours are drawn in **pieces** and two pieces of one line are neighbours at no
+  height difference at all; an observation is a **transect**, not the nearest line on that
+  side, or two pieces either side of a crest get paired; and a leftover disagreement where
+  both lines came out at the *same* level is that same break and is benign, while two
+  intervals apart is a misreading and is not.
+- **Laplace has no interior maximum.** The smoothest surface fitting a set of rings gives
+  every hill a flat top — mesas, and nothing for `analyse` to find. Innermost rings get a
+  point of their own six tenths of an interval above, or below where their slope tags say
+  hollow.
+- **Landform candidates are curvature, not extrema.** A surveyed hillside has almost no
+  local extrema; its landforms are spurs and re-entrants, which are where the ground
+  *bends*. The forest sample gave 2 candidates as extrema and 54 as curvature. Extent and
+  amplitude are the residual against a ring of probes, not against the lowest one, because
+  a regional fall of one in eight swamps a three-metre knoll.
+- **`ContourRelief.contours()` returns the drawn lines and never retraces.** Real contours
+  are cartography — smoothed, cut at a knoll, thickened every fifth line. Retracing them
+  from a height field reconstructed out of those same lines is how a surveyed map comes to
+  look generated.
+- **`LibraryProvider.pick` is pure and it declines.** The bundles are fixed and their
+  window lists were written in a deterministic order; loading is `loadLibrary`, outside. It
+  returns null when no bundle satisfies a requirement, which is the whole difference from
+  the generator — a provider that never says no hands the contours drill a flat map and
+  calls it a hard round.
+- **The generated maps carry no `analysis`**, so `warpCandidates` and pexeso's
+  `controlFor` keep their `instanceof AnalyticRelief` fallbacks. Filling it would change
+  which ground a warp picks up on every generated round and re-pin the goldens, which step
+  4 promised not to do twice.
+
 **Cartography**
 
 - **`MapView` styles by code**, through the table in `isom.ts` beside the widths. A code
@@ -236,9 +305,21 @@ npm run preview      # PWA behaviour needs the built bundle, not the dev server
 ```
 
 `#/dev/maps` is a contact sheet of many seeds at once — whole map, 110 m crop, contours
-beside the relief they describe. Dev builds only; `App` loads it lazily behind
-`import.meta.env.DEV` so it folds out of the bundle. Cartography is checked by eye, and
-that is only safe while looking is cheap.
+beside the relief they describe — with a **library** row above them showing every bundle
+in `public/maps/` in the same framings, so a real map and a generated one are compared on
+one page. Dev builds only; `App` loads it lazily behind `import.meta.env.DEV` so it folds
+out of the bundle. Cartography is checked by eye, and that is only safe while looking is
+cheap.
+
+Importing a map is offline and its output is committed, like the icons and the symbols:
+
+```bash
+node scripts/import-map.mjs 'forest sample.xmap' --name forest-sample \
+  --licence GPL-3.0-or-later --attribution 'OpenOrienteering Mapper'
+```
+
+It loads `src/lib/maps/import/*.ts` through Vite's own SSR loader, so there is no new
+dependency and no build step, and every stage it runs is a tested pure function.
 
 CI runs the first three on every push and pull request. A green run on `main` publishes
 `dist/` to `gh-pages` — so a merge to `main` is a release, and the artifact that ships is
