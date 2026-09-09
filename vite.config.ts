@@ -5,9 +5,9 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath, URL } from 'node:url';
 
 // `base` matters for GitHub Pages project sites, where the app is served from
-// /<repo>/ rather than /. Set OB_BASE at build time; the default suits a user site
+// /<repo>/ rather than /. Set BASE_PATH at build time; the default suits a user site
 // and `vite dev`.
-const base = process.env.OB_BASE ?? '/';
+const base = process.env.BASE_PATH ?? '/';
 
 export default defineConfig({
   base,
