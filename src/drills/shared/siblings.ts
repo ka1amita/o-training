@@ -3,7 +3,8 @@ import {
   applyEdits, difference, proposeEdit,
   type Edit, type EditSpec, type Variant,
 } from '@/lib/terrain/edits.ts';
-import { positionOf, wholeMap, type Crop, type OMap } from '@/lib/terrain/omap.ts';
+import { suitsOnMask } from '@/lib/terrain/mask.ts';
+import { positionOf, wholeMap, type Crop, type OMap, type RasterLayer } from '@/lib/terrain/omap.ts';
 import { suits } from '@/lib/terrain/semantics.ts';
 import { readGround, type Ground } from '@/lib/terrain/terrain.ts';
 
@@ -70,15 +71,41 @@ const FALLBACK_ATTEMPTS = 12;
  * A warp has nothing to answer: it moves the ground itself, and the ground is never in
  * the wrong place.
  */
-export function isPlausibleChange(variant: Variant, ground: Ground): boolean {
+export function isPlausibleChange(variant: Variant, where: Plausibility): boolean {
   const after = applyEdits(variant.base, variant.edits);
   return variant.edits.every((edit) => {
     if (edit.op === 'warp') return true;
     if (edit.op === 'remove') return true;
     const id = edit.op === 'add' ? edit.feature.id : edit.feature;
     const moved = after.features.find((f) => f.id === id);
-    return !moved || suits(moved.code, ground, positionOf(moved));
+    if (!moved) return true;
+    const at = positionOf(moved);
+    return 'ground' in where
+      ? suits(moved.code, where.ground, at)
+      : suitsOnMask(moved.code, where.raster, at);
   });
+}
+
+/**
+ * What the map can be asked whether a symbol belongs somewhere.
+ *
+ * §3.3: same question, two backends. A height field answers it about the shape of the
+ * ground; a colour mask answers it about the ink. A map that has a relief is asked about
+ * the relief — it is the stronger claim, and it is the one the generator's own placement
+ * rules were written against — and a picture with no heights is asked about its mask.
+ */
+export type Plausibility =
+  | { readonly ground: Ground }
+  | { readonly raster: RasterLayer };
+
+/** Which backend this map offers, or none, in which case nothing is ever implausible. */
+export function plausibilityOf(map: OMap): Plausibility | null {
+  if (map.relief.kind !== 'none') return { ground: readGround(map.relief) };
+  if (map.raster) return { raster: map.raster };
+  // A flat map with no picture: `suits` would ask a height field of zeros for its
+  // steepest quarter and refuse every symbol that has an opinion, which is not a judgement
+  // about the ground, it is a judgement about there being none.
+  return null;
 }
 
 /** Whether this edit is one the player could notice. */
@@ -103,7 +130,7 @@ export function siblings(
   // Sampled once for the whole round. An edit that moves a feature leaves the height
   // field alone, so every candidate is judged against the same ground; a round that only
   // warps has nothing to ask it, and reading the ground is not free.
-  const ground = options.ops.some((op) => op !== 'warp') ? readGround(base.relief) : null;
+  const ground = options.ops.some((op) => op !== 'warp') ? plausibilityOf(base) : null;
 
   const spec = (distance: number): EditSpec => ({
     distance,

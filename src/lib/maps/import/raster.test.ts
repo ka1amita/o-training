@@ -4,7 +4,8 @@ import { CLASS_RGB, MASK, MASK_CLASSES, looksIsom, nearestClass } from '@/lib/te
 import { classAt, suitsOnMask, warpRaster } from '@/lib/terrain/mask.ts';
 import type { RasterLayer } from '@/lib/terrain/omap.ts';
 import { loadBundle, saveBundle, type MapBundle } from '../bundle.ts';
-import { decodePng, encodePng, type RgbaImage } from './png.ts';
+import { blank, disc, paint } from './__fixtures__/paint.ts';
+import { decodePng, encodePng } from './png.ts';
 import {
   buildRaster, classifyColours, cropBanner, maskOf, parseWorldFile, rasterAnalysis,
   MIN_METRES_PER_PIXEL,
@@ -23,50 +24,6 @@ import {
 
 const inflate = (data: Uint8Array): Uint8Array => new Uint8Array(inflateSync(data));
 const deflate = (data: Uint8Array): Uint8Array => new Uint8Array(deflateSync(data));
-
-const blank = (width: number, height: number, rgb: readonly [number, number, number]): RgbaImage => {
-  const data = new Uint8ClampedArray(width * height * 4);
-  for (let i = 0; i < width * height; i++) {
-    data[i * 4] = rgb[0];
-    data[i * 4 + 1] = rgb[1];
-    data[i * 4 + 2] = rgb[2];
-    data[i * 4 + 3] = 255;
-  }
-  return { width, height, data };
-};
-
-const paint = (
-  image: RgbaImage,
-  x0: number, y0: number, x1: number, y1: number,
-  rgb: readonly [number, number, number],
-): void => {
-  for (let y = Math.max(0, y0); y < Math.min(image.height, y1); y++) {
-    for (let x = Math.max(0, x0); x < Math.min(image.width, x1); x++) {
-      const i = (y * image.width + x) * 4;
-      image.data[i] = rgb[0];
-      image.data[i + 1] = rgb[1];
-      image.data[i + 2] = rgb[2];
-      image.data[i + 3] = 255;
-    }
-  }
-};
-
-const disc = (
-  image: RgbaImage,
-  cx: number, cy: number, r: number,
-  rgb: readonly [number, number, number],
-): void => {
-  for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(image.height - 1, Math.ceil(cy + r)); y++) {
-    for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(image.width - 1, Math.ceil(cx + r)); x++) {
-      if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) continue;
-      const i = (y * image.width + x) * 4;
-      image.data[i] = rgb[0];
-      image.data[i + 1] = rgb[1];
-      image.data[i + 2] = rgb[2];
-      image.data[i + 3] = 255;
-    }
-  }
-};
 
 describe('png', () => {
   it('round-trips pixels through a real deflate', () => {

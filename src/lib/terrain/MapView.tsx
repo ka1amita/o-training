@@ -1,11 +1,15 @@
-import { useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import type { Contour } from './contours.ts';
-import { COLOUR, CONTOUR, MARSH, POINT, styleFor, type LineStyle, type PointStyle } from './isom.ts';
+import {
+  CLASS_CSS, COLOUR, CONTOUR, MARSH, MASK_CLASSES, POINT, styleFor,
+  type LineStyle, type PointStyle,
+} from './isom.ts';
 import type { IsomCode } from './semantics.ts';
 import {
   areasOf, boundsOf, linesOf, pointsOf,
-  type Crop, type Feature, type OMap, type Vec,
+  type Crop, type Feature, type OMap, type RasterLayer, type Vec,
 } from './omap.ts';
+import { warpDisplacement } from './relief.ts';
 
 /**
  * A map drawn to ISOM 2017-2.
@@ -121,6 +125,10 @@ export default function MapView({
 
       <rect x={window_.x} y={window_.y} width={window_.size} height={window_.size} fill={COLOUR.ground} />
 
+      {/* The picture, under everything. Nothing at all when the map has none, which is
+          what keeps a generated map's markup exactly what it was. */}
+      {!contoursOnly && map.raster && <RasterUnderlay raster={map.raster} />}
+
       {!contoursOnly && <Areas areas={visible.areas} marshId={marshId} />}
 
       {visible.contours.map((c, i) => (
@@ -147,6 +155,134 @@ export default function MapView({
       )}
     </svg>
   );
+}
+
+/**
+ * How much wider than the blob a patch is painted.
+ *
+ * A dot on a scanned map has an anti-aliased rim a pixel or two across, and a patch drawn
+ * at exactly the blob's radius leaves a grey ring where the boulder was — which is a tell
+ * far easier to spot than the boulder that moved.
+ */
+const PATCH_PAD = 1.4;
+
+/**
+ * The map as it was photographed, in world metres, under whatever was drawn on top.
+ *
+ * A crop is still only a `viewBox`: the image is placed once at its own origin and the
+ * SVG clips it, so a pexeso pair is two `<image>` elements over one file the browser
+ * decodes once, exactly as two crops of a vector map are two views of one geometry.
+ *
+ * Everything an edit does to the picture arrives here as data — a patch to paint, a warp
+ * to resample — because the answer comes from the edit list and never from pixels
+ * (`AGENTS.md`). This component is the only thing in the app that reads either.
+ */
+function RasterUnderlay({ raster }: { raster: RasterLayer }) {
+  const source = useWarpedImage(raster);
+  return (
+    <>
+      <image
+        href={source}
+        x={raster.originX}
+        y={raster.originY}
+        width={raster.imageWidth * raster.metresPerPixel}
+        height={raster.imageHeight * raster.metresPerPixel}
+        preserveAspectRatio="none"
+      />
+      {(raster.patches ?? []).map((patch, i) => (
+        <circle
+          key={i}
+          cx={patch.at.x}
+          cy={patch.at.y}
+          r={patch.radius * PATCH_PAD}
+          fill={CLASS_CSS[MASK_CLASSES[patch.fill] ?? 'white']}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * The picture, displaced through the warps the edits left on it.
+ *
+ * §3.1 says a raster warps like a DEM does: every pixel of the result is sampled from
+ * where it came from, through the **inverse** of the same compact bump `warpDisplacement`
+ * gives the height field and the features. So the ground in the picture moves exactly as
+ * far as the ground in the relief, which is the whole reason a warp is one operation with
+ * one definition.
+ *
+ * A canvas rather than an SVG filter: `feDisplacementMap` reads its offsets from another
+ * image and cannot be handed a formula, and building that image is the same loop with an
+ * extra encode. The design note guessed `useMemo`; it has to be an effect, because the
+ * image has to be **decoded** before it can be resampled and decoding is asynchronous.
+ * Until it is, and anywhere there is no canvas at all — a test, a server render — the
+ * plain picture is drawn, which is the map with its ground unmoved and never a wrong map.
+ */
+function useWarpedImage(raster: RasterLayer): string {
+  const [warped, setWarped] = useState<string | null>(null);
+  // Serialised rather than compared by identity: `applyEdits` builds a new layer on every
+  // render of a variant, so the array is a different array each time and an effect keyed
+  // on it would resample a two-megapixel image on every keystroke elsewhere on the page.
+  const signature = JSON.stringify(raster.warps ?? []);
+
+  useEffect(() => {
+    const warps = JSON.parse(signature) as readonly Parameters<typeof warpDisplacement>[0][];
+    if (warps.length === 0) {
+      setWarped(null);
+      return;
+    }
+    if (typeof document === 'undefined') return;
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    let live = true;
+    const image = new Image();
+    image.onload = () => {
+      if (!live) return;
+      const { width, height } = image;
+      canvas.width = width;
+      canvas.height = height;
+      context.drawImage(image, 0, 0);
+      try {
+        const from = context.getImageData(0, 0, width, height);
+        const to = context.createImageData(width, height);
+        const m = raster.metresPerPixel;
+        for (let j = 0; j < height; j++) {
+          for (let i = 0; i < width; i++) {
+            let x = raster.originX + (i + 0.5) * m;
+            let y = raster.originY + (j + 0.5) * m;
+            for (const warp of warps) {
+              const d = warpDisplacement(warp, x, y);
+              x -= d.x;
+              y -= d.y;
+            }
+            const si = Math.min(width - 1, Math.max(0, Math.floor((x - raster.originX) / m)));
+            const sj = Math.min(height - 1, Math.max(0, Math.floor((y - raster.originY) / m)));
+            const s = (sj * width + si) * 4;
+            const t = (j * width + i) * 4;
+            to.data[t] = from.data[s]!;
+            to.data[t + 1] = from.data[s + 1]!;
+            to.data[t + 2] = from.data[s + 2]!;
+            to.data[t + 3] = from.data[s + 3]!;
+          }
+        }
+        context.putImageData(to, 0, 0);
+        setWarped(canvas.toDataURL('image/png'));
+      } catch {
+        // A cross-origin picture taints the canvas and `getImageData` throws. The
+        // unwarped map is still the right ground for three of four options and a wrong
+        // one for the fourth, which a blank card is not.
+        setWarped(null);
+      }
+    };
+    image.src = raster.image;
+    return () => {
+      live = false;
+    };
+  }, [raster.image, raster.metresPerPixel, raster.originX, raster.originY, signature]);
+
+  return warped ?? raster.image;
 }
 
 /**

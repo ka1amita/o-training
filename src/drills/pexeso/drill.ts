@@ -100,6 +100,11 @@ function controlFor(rng: Rng, map: OMap, halfSpan: number): Vec {
     ...(map.relief instanceof AnalyticRelief
       ? map.relief.landforms.map((f) => ({ x: f.x, y: f.y }))
       : []),
+    // A picture has no features to stand a control on, so the pipeline read some off its
+    // mask: black and blue blobs, which is a boulder or a water hole and is exactly what
+    // a control sits on. Appended last, so a map that has features keeps offering them in
+    // the order it always did — every golden here is a `rng.pick` over this array.
+    ...(map.analysis?.controlSites ?? []),
   ].filter((f) => f.x >= lo && f.x <= hi && f.y >= lo && f.y <= hi);
   // Anchoring on a feature is what makes the control worth finding. A map whose features
   // all sit near the edge still has to produce a pair, so the fallback is the interior.

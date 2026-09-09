@@ -1,4 +1,6 @@
 import type { Rng } from '@/lib/rng.ts';
+import { ISOM_SCALE } from './isom.ts';
+import { surroundOf, warpRaster } from './mask.ts';
 import {
   areasOf, boundsOf, insideCrop, movedTo, pointsOf, positionOf, translated,
   type Crop, type Feature, type OMap, type Vec,
@@ -56,7 +58,7 @@ function applyOne(map: OMap, edit: Edit): OMap {
   switch (edit.op) {
     case 'move': {
       const feature = map.features.find((f) => f.id === edit.feature);
-      if (!feature) return map;
+      if (!feature) return moveBlob(map, edit);
       // Clamped here rather than in the edit: an edit is a request for a displacement,
       // and how much of it the map has room for is the map's answer, not the asker's.
       const from = positionOf(feature);
@@ -86,11 +88,50 @@ function applyOne(map: OMap, edit: Edit): OMap {
       return {
         ...map,
         relief: map.relief.warped(edit.warp),
+        // The picture is ground too. Its mask moves here so that everything which
+        // *reasons* about the map agrees with what is drawn; the pixels themselves are
+        // displaced at render time, from `warps`.
+        ...(map.raster ? { raster: warpRaster(map.raster, edit.warp) } : {}),
         ...(edit.warp.carries
           ? { features: map.features.map((f) => carried(f, edit.warp, map)) }
           : {}),
       };
   }
+}
+
+/**
+ * A blob on a raster map, moved: cut, paste, and paint over where it was.
+ *
+ * The thing being moved is not in `features` — the picture already draws it, and putting
+ * it there would draw every boulder twice — so it comes from `analysis.moveable`, and
+ * moving it is two operations rather than one. The symbol is drawn again at its new
+ * place, from the same style table a vector boulder goes through, and the pixels it came
+ * from get a patch of whatever surrounds them.
+ *
+ * Both halves are **data on the map**, not pixels: `wellFormed` and `difference` read the
+ * edit, and the renderer is the only thing that ever looks at `raster.patches`. That is
+ * the one rule holding on a map made of pixels.
+ */
+function moveBlob(map: OMap, edit: Extract<Edit, { op: 'move' }>): OMap {
+  const blob = map.analysis?.moveable?.find((f) => f.id === edit.feature);
+  if (!blob || !map.raster) return map;
+  const from = positionOf(blob);
+  const to = {
+    x: Math.min(map.width, Math.max(0, from.x + edit.dx)),
+    y: Math.min(map.height, Math.max(0, from.y + edit.dy)),
+  };
+  const radius = blob.size ?? 0;
+  return {
+    ...map,
+    features: [...map.features, movedTo(blob, to)],
+    raster: {
+      ...map.raster,
+      patches: [
+        ...(map.raster.patches ?? []),
+        { at: from, radius, fill: surroundOf(map.raster, from, radius) },
+      ],
+    },
+  };
 }
 
 /**
@@ -169,10 +210,17 @@ export function proposeEdit(map: OMap, rng: Rng, spec: EditSpec): Edit {
     const inside = list.filter((item) => insideCrop(at(item), spec.within!));
     return inside.length > 0 ? inside : list;
   };
-  const points = shown(pointsOf(map).filter(wanted), positionOf);
+  // A raster map's blobs stand in for its points. `moveable` is empty on every other map
+  // — the generator carries no analysis at all and a vector bundle's is filled from its
+  // features — so no pool any existing map offers changes shape here.
+  const points = shown([...pointsOf(map), ...(map.analysis?.moveable ?? [])].filter(wanted), positionOf);
   const areas = shown(areasOf(map).filter(wanted), positionOf);
   const warps = shown(warpCandidates(map), (w) => w.centre);
   const has = (op: Edit['op']) => spec.ops.includes(op);
+  // Only a *move* is offered on a blob. Removing one is the same cut-and-paint and would
+  // work, but a swap would draw a symbol the picture does not contain beside the ink that
+  // is still there — and the drill this matters to, map memory, asks for moves anyway.
+  const vectorPoints = pointsOf(map).filter(wanted);
 
   const pools: Pool[] = [];
   if (has('warp') && warps.length > 0) pools.push({ op: 'warp', features: [] });
@@ -181,10 +229,10 @@ export function proposeEdit(map: OMap, rng: Rng, spec: EditSpec): Edit {
     if (areas.length > 0) pools.push({ op: 'move', features: areas });
   }
   if (has('remove')) {
-    if (points.length > 0) pools.push({ op: 'remove', features: points });
+    if (vectorPoints.length > 0) pools.push({ op: 'remove', features: vectorPoints });
     if (areas.length > 0) pools.push({ op: 'remove', features: areas });
   }
-  if (has('swap') && points.length > 0) pools.push({ op: 'swap', features: points });
+  if (has('swap') && vectorPoints.length > 0) pools.push({ op: 'swap', features: vectorPoints });
 
   const pool = rng.pick(pools);
 
@@ -266,11 +314,25 @@ export function difference(variant: Variant, crop: Crop): Difference {
   let visible = false;
   let movedGround = false;
 
-  const note = (code: IsomCode | undefined) => {
+  /**
+   * How hard the thing that changed is to see, in paper millimetres times contrast.
+   *
+   * `drawn` is a raster blob's own size, in metres of ground: a blob is as big as the ink
+   * that made it, which is a fact about this map rather than the ISOM floor for its code,
+   * and the floor is what a vector feature has instead. Converted to paper at the map's
+   * own scale so the two are the same number — which is the point of salience, that a
+   * moved boulder on a picture and a moved boulder on a drawing compare.
+   *
+   * The contrast is the blob's colour class, since that is where its code came from.
+   */
+  const note = (code: IsomCode | undefined, drawn?: number) => {
     const semantics = code === undefined ? undefined : semanticsOf(code);
     const family = semantics?.family ?? 'landform';
     if (!families.includes(family)) families.push(family);
-    const size = semantics?.minSizeMm ?? 1;
+    const paper = drawn === undefined
+      ? 0
+      : (2 * drawn * 1000) / (variant.base.scale || ISOM_SCALE);
+    const size = Math.max(semantics?.minSizeMm ?? 1, paper);
     salience = Math.max(salience, size * CONTRAST[semantics?.colour ?? 'brown']);
   };
 
@@ -296,13 +358,13 @@ export function difference(variant: Variant, crop: Crop): Difference {
       continue;
     }
 
-    const was = variant.base.features.find((f) => f.id === edit.feature);
+    const was = subject(variant.base, edit.feature);
     if (!was) continue;
-    note(was.code);
+    note(was.code, was.size);
     if (insideCrop(positionOf(was), crop)) visible = true;
     footprint += overlap(boundsOf(was), crop) / cropArea;
     if (edit.op === 'move') {
-      const now = after.features.find((f) => f.id === edit.feature);
+      const now = subject(after, edit.feature);
       if (now) {
         if (insideCrop(positionOf(now), crop)) visible = true;
         footprint += overlap(boundsOf(now), crop) / cropArea;
@@ -318,6 +380,18 @@ export function difference(variant: Variant, crop: Crop): Difference {
     visible,
   };
 }
+
+/**
+ * The feature an edit names, wherever it lives.
+ *
+ * On a raster map the thing being moved is a blob in `analysis.moveable` rather than a
+ * feature in `features` — the picture draws it, so nothing else has to. Looking in only
+ * one of the two places is how a raster round comes out with every distractor reported
+ * as identical to the answer: the edit is real, and `difference` cannot see what it
+ * touched.
+ */
+const subject = (map: OMap, id: string): Feature | undefined =>
+  map.features.find((f) => f.id === id) ?? map.analysis?.moveable?.find((f) => f.id === id);
 
 interface Box {
   readonly minX: number;
