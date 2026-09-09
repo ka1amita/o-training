@@ -1,12 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { hashJson, seeded } from '@/lib/rng.ts';
+import { goldenMap } from '@/lib/terrain/golden.ts';
 import { pexeso as drill, paramsFor, attemptBudget, CROP_SIZE, type PexesoRound } from './drill.ts';
 import { initialState, pexesoReduce, type PexesoEvent, type PexesoState } from './state.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: 1, max: 10 });
 const gen = (seed: number, level: number) => drill.generate(seeded(seed), level);
+
+/** The generator's decisions, not the shape of the round. See `goldenMap`. */
+const golden = (round: PexesoRound) => ({
+  pairs: round.pairs,
+  terrains: round.terrains.map(goldenMap),
+  cards: round.cards,
+  shift: round.shift,
+  cropSize: round.cropSize,
+  timeLimitMs: round.timeLimitMs,
+});
 
 describe('pexeso / generate', () => {
   it('is well formed at every level, for any seed', () => {
@@ -69,7 +80,7 @@ describe('pexeso / generate', () => {
 
   it('gives each pair its own terrain', () => {
     const round = gen(5, 9);
-    const shapes = new Set(round.terrains.map((t) => hashJson(t)));
+    const shapes = new Set(round.terrains.map((t) => hashJson(goldenMap(t))));
     expect(shapes.size).toBe(round.pairs);
   });
 
@@ -100,7 +111,8 @@ describe('pexeso / generate', () => {
   });
 
   it('golden: fixed seeds at fixed levels', () => {
-    expect(hashJson([1, 2].flatMap((s) => [1, 6, 10].map((l) => gen(s, l))))).toMatchInlineSnapshot(`"888717f4"`);
+    expect(hashJson([1, 2].flatMap((s) => [1, 6, 10].map((l) => golden(gen(s, l))))))
+      .toMatchInlineSnapshot(`"a5f3197e"`);
   });
 });
 

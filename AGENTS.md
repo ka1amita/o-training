@@ -22,7 +22,11 @@ seed instead of sending one.
 1. **Properties** (`fast-check`). The invariant everywhere: **exactly one correct answer
    exists**. A round with two is unfair and invisible while playing. `wellFormed()` also
    runs at runtime in dev, and is itself tested by breaking each invariant on purpose.
-2. **Golden determinism.** One seed, one round, pinned by hash.
+2. **Golden determinism.** One seed, one round, pinned by hash — over `goldenMap`, the
+   generator's *decisions*, not the objects that carry them. The engine's types are being
+   taken apart (`docs/real-maps-architecture.md`); a hash over the live objects would need
+   re-pinning at every step, and a re-pin you had to make is indistinguishable from one you
+   should not have.
 3. **Reducers.** Events carry their own timestamps, so no fake timers.
 4. **Not tested: rendering.** Checked by eye — safe only because of the one rule.
 
@@ -87,6 +91,12 @@ stale state and the round could not finish.
   it must land **inside the window** (or two candidates are identical).
 
 **Terrain reads the ground**
+
+- **One table says what a symbol means**: `semantics.ts`, keyed by ISOM code. `suitsArea`
+  and `suitsPoint` are two lines over it, and the ground rules — quantiles, maxima, minima
+  — are its data. A second `kind → code` mapping anywhere is the bug: a real map's `410`
+  and a generated `fight` have to be one thing to the app, or the understanding lives in
+  two places and they drift.
 
 `generateTerrain` runs in phases and the order is the point: landforms, then one
 `readGround` sampling, then everything else placed by consulting it. A stream that ignores

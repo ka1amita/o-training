@@ -6,6 +6,8 @@ import {
   separationOf, MIN_POINT_SEPARATION, type PointFeature, type Terrain,
 } from './terrain.ts';
 import { contributionOf, heightAt, maxHeightDifference, sampleGrid } from './height.ts';
+import { goldenMap } from './golden.ts';
+import { CODE_OF } from './semantics.ts';
 import { contoursOf, marchingSquares, stitch } from './contours.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
@@ -83,8 +85,8 @@ describe('terrain / generate', () => {
     for (const a of kinds) {
       for (const b of kinds) {
         const gap = separationOf(
-          { kind: a, x: 0, y: 0, size: 3 },
-          { kind: b, x: 0, y: 0, size: 3 },
+          { kind: a, code: CODE_OF[a], x: 0, y: 0, size: 3 },
+          { kind: b, code: CODE_OF[b], x: 0, y: 0, size: 3 },
         );
         expect(gap, `${a} and ${b}`).toBeGreaterThanOrEqual(MIN_POINT_SEPARATION);
       }
@@ -189,7 +191,7 @@ describe('terrain / generate', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     const terrains = [1, 2, 3].flatMap((s) => [1, 5, 9].map((l) => make(s, l)));
-    expect(hashJson(terrains)).toMatchInlineSnapshot(`"049b8e41"`);
+    expect(hashJson(terrains.map(goldenMap))).toMatchInlineSnapshot(`"b6b1aff3"`);
   });
 });
 

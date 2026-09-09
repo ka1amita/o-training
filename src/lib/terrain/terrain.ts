@@ -2,6 +2,7 @@ import type { Rng } from '@/lib/rng.ts';
 import {
   contributionOf, downhillAt, sampleGrid, sampleGridAt, slopeAt, type Grid,
 } from './height.ts';
+import { CODE_OF, CRAG_STEEPEST, suits, type IsomCode } from './semantics.ts';
 
 /**
  * Terrain is a **list of named features**, not a field of noise.
@@ -46,6 +47,8 @@ export interface Landform {
 
 export interface PointFeature {
   readonly kind: PointKind;
+  /** The semantic key. Derived from `kind` in `CODE_OF`, and nowhere else. */
+  readonly code: IsomCode;
   readonly x: number;
   readonly y: number;
   /** Drawn size in metres. */
@@ -59,11 +62,13 @@ export interface Vec {
 
 export interface LineFeature {
   readonly kind: LineKind;
+  readonly code: IsomCode;
   readonly points: readonly Vec[];
 }
 
 export interface AreaFeature {
   readonly kind: AreaKind;
+  readonly code: IsomCode;
   readonly x: number;
   readonly y: number;
   readonly rx: number;
@@ -251,21 +256,6 @@ const TILT_DROP: readonly [number, number] = [14, 32];
  * ISOM uses, so the relief is what has to land in range.
  */
 const LANDFORM_RELIEF: readonly [number, number] = [20, 40];
-
-/**
- * Where each kind of ground sits in **this map's own** slope distribution.
- *
- * Absolute thresholds were tried first and are wrong, because the regional tilt alone
- * ranges from 0.05 to 0.11 m/m: a steeply tilted map has no ground under an absolute
- * "flat enough for marsh" bar, so every marsh fell through to the unconditioned fallback
- * and landed anywhere — which is the behaviour this whole phase exists to remove. A marsh
- * belongs in the flattest ground *there is here*, and a crag on the steepest.
- */
-const MARSH_FLATTEST = 0.25;
-const ROCK_STEEPEST = 0.85;
-const CRAG_STEEPEST = 0.75;
-const OPEN_MAX = 0.8;
-const VEGETATION_MAX = 0.92;
 
 /** A budget for every rejection sampler here. See `placePoints`. */
 const ATTEMPT_FACTOR = 40;
@@ -492,37 +482,15 @@ function sampleWhere(
 }
 
 /**
- * Where each kind of ground belongs.
+ * Where each kind of ground belongs — asked of the semantic table, by code.
  *
- * This is the whole of "plausible combinations": a marsh is wet because water sits there,
- * so it is in a hollow and it is flat; bare rock is exposed because nothing holds soil on
- * it, so it is steep. Placed uniformly at random, a marsh halfway up a hillside is the
- * kind of wrongness an orienteer sees instantly without being able to name.
+ * The rules themselves live in `semantics.ts` as data, so that a marsh imported from a
+ * real map and a marsh this file placed answer the same question the same way.
  */
 export function suitsArea(kind: AreaKind, ground: Ground, p: Vec): boolean {
-  const slope = slopeAt(ground.grid, p.x, p.y);
-  const height = sampleGridAt(ground.grid, p.x, p.y);
-  switch (kind) {
-    case 'marsh':
-      return slope < ground.slopeQuantile(MARSH_FLATTEST) && height < ground.quantile(0.45);
-    case 'rock':
-      return slope > ground.slopeQuantile(ROCK_STEEPEST);
-    case 'open':
-    case 'rough':
-      return slope < ground.slopeQuantile(OPEN_MAX);
-    default:
-      // Vegetation grows anywhere the ground is not a crag.
-      return slope < ground.slopeQuantile(VEGETATION_MAX);
-  }
+  return suits(CODE_OF[kind], ground, p);
 }
 
-/**
- * Areas, with the sinks taken first.
- *
- * Where a traced stream stops inland it has run into a closed hollow, and on a real map
- * that is drawn: the water goes into a marsh. Leaving the sink bare is what makes a
- * stream look like it was cut off rather than like it arrived somewhere.
- */
 /**
  * The same question for a point feature, asked the weaker way.
  *
@@ -532,27 +500,16 @@ export function suitsArea(kind: AreaKind, ground: Ground, p: Vec): boolean {
  * not quite the summit is a fine knoll; a knoll in a hollow is a contradiction.
  */
 export function suitsPoint(kind: PointKind, ground: Ground, p: Vec): boolean {
-  const REACH = 10;
-  const here = sampleGridAt(ground.grid, p.x, p.y);
-  const around =
-    [[REACH, 0], [-REACH, 0], [0, REACH], [0, -REACH]]
-      .reduce((sum, [dx, dy]) => sum + sampleGridAt(ground.grid, p.x + dx!, p.y + dy!), 0) / 4;
-  switch (kind) {
-    case 'knoll':
-      return here > around;
-    case 'pit':
-      return here < around;
-    case 'crag':
-      // A crag *is* a slope break. A boulder is not: it sits wherever the ice dropped it,
-      // and requiring steep ground for it pulled every scattered feature onto the one
-      // ridge, leaving the rest of the map blank.
-      return slopeAt(ground.grid, p.x, p.y) > ground.slopeQuantile(CRAG_STEEPEST);
-    case 'boulder':
-    case 'tree':
-      return true;
-  }
+  return suits(CODE_OF[kind], ground, p);
 }
 
+/**
+ * Areas, with the sinks taken first.
+ *
+ * Where a traced stream stops inland it has run into a closed hollow, and on a real map
+ * that is drawn: the water goes into a marsh. Leaving the sink bare is what makes a
+ * stream look like it was cut off rather than like it arrived somewhere.
+ */
 function placeAreas(
   rng: Rng,
   params: TerrainParams,
@@ -566,6 +523,7 @@ function placeAreas(
     const [low, high] = radiusFor(kind);
     return {
       kind,
+      code: CODE_OF[kind],
       x: p.x,
       y: p.y,
       rx: rng.range(low, high),
@@ -683,7 +641,7 @@ function placeClusters(
       const kind = rng.pick(kinds);
       // A field of knolls has to sit on knolls like any other, so the same check applies.
       if (!suitsPoint(kind, ground, p)) continue;
-      const feature = { kind, x: p.x, y: p.y, size: sizeFor(rng, kind) };
+      const feature = { kind, code: CODE_OF[kind], x: p.x, y: p.y, size: sizeFor(rng, kind) };
       if (placed.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < separationOf(q, feature))) continue;
       placed.push(feature);
       made++;
@@ -730,7 +688,7 @@ function placePoints(rng: Rng, params: TerrainParams, count: number, ground: Gro
     } else {
       p = sampleWhere(rng, params.size, () => true, 1);
     }
-    const feature = { kind, x: p.x, y: p.y, size: sizeFor(rng, kind) };
+    const feature = { kind, code: CODE_OF[kind], x: p.x, y: p.y, size: sizeFor(rng, kind) };
     if (!clear(feature)) continue;
     // Checked, not assumed. A grid maximum at 4.7 m spacing is not always a rise at the
     // 10 m the eye reads, and the nudge above can push a knoll off its own summit onto
@@ -812,7 +770,7 @@ function placeRides(rng: Rng, params: TerrainParams): LineFeature[] {
       };
       const ends = clipToSquare(origin, d, size);
       if (!ends) continue;
-      lines.push({ kind: 'ride', points: [ends[0], ends[1]] });
+      lines.push({ kind: 'ride', code: CODE_OF.ride, points: [ends[0], ends[1]] });
     }
   }
   return lines;
@@ -969,7 +927,7 @@ function tracePath(ground: Ground, start: Vec, end: Vec, size: number): Vec[] {
 /** A ride is cut, so it is straight; a fence follows a boundary, so it wanders. */
 function makeStraightOrWandering(rng: Rng, params: TerrainParams, kind: LineKind): LineFeature {
   const [start, end] = crossing(rng, params.size);
-  if (kind === 'ride') return { kind, points: [start, end] };
+  if (kind === 'ride') return { kind, code: CODE_OF[kind], points: [start, end] };
 
   const steps = 4;
   const points: Vec[] = [start];
@@ -982,7 +940,7 @@ function makeStraightOrWandering(rng: Rng, params: TerrainParams, kind: LineKind
     });
   }
   points.push(end);
-  return { kind, points };
+  return { kind, code: CODE_OF[kind], points };
 }
 
 /**
@@ -1019,7 +977,7 @@ function placeLines(rng: Rng, params: TerrainParams, ground: Ground): Drainage {
     stream = traceStream(ground, from, size);
   }
   if (stream) {
-    lines.push({ kind: 'stream', points: stream });
+    lines.push({ kind: 'stream', code: CODE_OF.stream, points: stream });
     const end = stream[stream.length - 1]!;
     const onEdge = end.x <= 0 || end.y <= 0 || end.x >= size || end.y >= size;
     if (!onEdge) sinks.push(end);
@@ -1027,14 +985,14 @@ function placeLines(rng: Rng, params: TerrainParams, ground: Ground): Drainage {
 
   // `params.lines` counts the lines that were *walked or built*, on top of the grid.
   const [start, end] = crossing(rng, size);
-  lines.push({ kind: 'path', points: tracePath(ground, start, end, size) });
+  lines.push({ kind: 'path', code: CODE_OF.path, points: tracePath(ground, start, end, size) });
 
   while (lines.length < rideCount + params.lines) {
     const [from, to] = crossing(rng, size);
     lines.push(
       rng.int(3) === 0
         ? makeStraightOrWandering(rng, params, 'fence')
-        : { kind: 'path', points: tracePath(ground, from, to, size) },
+        : { kind: 'path', code: CODE_OF.path, points: tracePath(ground, from, to, size) },
     );
   }
 

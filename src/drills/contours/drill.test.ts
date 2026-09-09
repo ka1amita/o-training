@@ -2,15 +2,24 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import { maxHeightDifference } from '@/lib/terrain/height.ts';
+import { goldenMap } from '@/lib/terrain/golden.ts';
 import {
   contours as drill, distanceFor, OPTIONS, MIN_HEIGHT_DIFFERENCE, type ContoursRound,
 } from './drill.ts';
-import { mapMemory, CROP_SIZE, paramsFor as memoryParams } from '@/drills/mapMemory/drill.ts';
+import {
+  mapMemory, CROP_SIZE, paramsFor as memoryParams, type MapMemoryRound,
+} from '@/drills/mapMemory/drill.ts';
 import { differsWithin } from '@/drills/shared/siblings.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: 1, max: 10 });
 const gen = (seed: number, level: number) => drill.generate(seeded(seed), level);
+
+/** The generator's decisions, not the shape of the round. See `goldenMap`. */
+const golden = (round: ContoursRound) => ({
+  options: round.options.map(goldenMap),
+  correctIndex: round.correctIndex,
+});
 
 describe('contours / generate', () => {
   it('is well formed at every level, for any seed', () => {
@@ -96,7 +105,8 @@ describe('contours / generate', () => {
   });
 
   it('golden: fixed seeds at fixed levels', () => {
-    expect(hashJson([1, 2].flatMap((s) => [1, 5, 10].map((l) => gen(s, l))))).toMatchInlineSnapshot(`"9818605d"`);
+    expect(hashJson([1, 2].flatMap((s) => [1, 5, 10].map((l) => golden(gen(s, l))))))
+      .toMatchInlineSnapshot(`"9818605d"`);
   });
 });
 
@@ -142,6 +152,12 @@ describe('contours / score', () => {
 
 describe('map memory / generate', () => {
   const memGen = (seed: number, level: number) => mapMemory.generate(seeded(seed), level);
+  const goldenMemory = (round: MapMemoryRound) => ({
+    options: round.options.map(goldenMap),
+    correctIndex: round.correctIndex,
+    crop: round.crop,
+    exposureMs: round.exposureMs,
+  });
 
   it('is well formed at every level, for any seed', () => {
     fc.assert(
@@ -215,7 +231,7 @@ describe('map memory / generate', () => {
   });
 
   it('golden: fixed seeds at fixed levels', () => {
-    expect(hashJson([1, 2].flatMap((s) => [1, 5, 10].map((l) => memGen(s, l)))))
-      .toMatchInlineSnapshot(`"8f4527d7"`);
+    expect(hashJson([1, 2].flatMap((s) => [1, 5, 10].map((l) => goldenMemory(memGen(s, l))))))
+      .toMatchInlineSnapshot(`"34ec53bd"`);
   });
 });
