@@ -30,14 +30,14 @@ about session seven and then flattening.
 
 ## Deploy
 
-Live at <https://www.matejkala.com/ob-training/>.
+Live at <https://www.matejkala.com/o-training/>.
 
 (The user site's custom domain applies to project pages too, so
-`ka1amita.github.io/ob-training/` redirects there. The `/ob-training/` subpath — which
+`ka1amita.github.io/o-training/` redirects there. The `/o-training/` subpath — which
 `base` has to match — is the same either way.)
 
 Pushing to `main` is the deploy. `.github/workflows/ci.yml` runs typecheck, tests, and the
-`base=/ob-training/` build; only if all three are green does it force-push that same
+`base=/o-training/` build; only if all three are green does it force-push that same
 `dist/` to the `gh-pages` branch. The deploy job publishes the **artifact the checks ran
 against** rather than rebuilding — otherwise "green" would be a claim about a different
 build. Pull requests run the checks and stop there.

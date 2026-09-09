@@ -21,7 +21,7 @@ const capture = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8' }).tri
 const remote = capture('git', ['remote', 'get-url', 'origin']);
 const sha = capture('git', ['rev-parse', '--short', 'HEAD']);
 
-const staging = join(tmpdir(), `ob-training-pages-${Date.now()}`);
+const staging = join(tmpdir(), `o-training-pages-${Date.now()}`);
 rmSync(staging, { recursive: true, force: true });
 mkdirSync(staging, { recursive: true });
 cpSync('dist', staging, { recursive: true });

@@ -35,7 +35,7 @@ jobs:
 
       - run: npm test
 
-      # base=/ob-training/ — a Pages project site is served from a subpath. The build that
+      # base=/o-training/ — a Pages project site is served from a subpath. The build that
       # gets verified has to be the build that ships, so this is `build:pages`, not `build`.
       - run: npm run build:pages
 
@@ -53,7 +53,7 @@ jobs:
       contents: write # force-pushes the gh-pages branch
     environment:
       name: production
-      url: https://www.matejkala.com/ob-training/
+      url: https://www.matejkala.com/o-training/
     steps:
       - uses: actions/download-artifact@v8
         with:

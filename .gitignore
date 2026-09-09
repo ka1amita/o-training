@@ -1,5 +1,5 @@
 .idea
-ob-training.iml
+o-training.iml
 node_modules
 dist
 dev-dist
