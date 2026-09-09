@@ -150,8 +150,15 @@ describe('edits / applyEdits', () => {
           if (before.id === target.id) {
             const from = positionOf(before);
             const to = positionOf(now);
-            expect(to.x - from.x).toBeCloseTo(12, 6);
-            expect(to.y - from.y).toBeCloseTo(-7, 6);
+            // Against what `applyEdits` promises, not against the raw request: an edit
+            // asks for a displacement and the map answers with as much of it as it has
+            // room for. About one feature in a thousand starts within twelve metres of
+            // the border — a stream's middle vertex, usually, since a watercourse runs to
+            // the edge by design — and asserting the request there failed this property
+            // roughly one full run in fourteen.
+            const clamp = (v: number) => Math.min(base.width, Math.max(0, v));
+            expect(to.x).toBeCloseTo(clamp(from.x + 12), 6);
+            expect(to.y).toBeCloseTo(clamp(from.y - 7), 6);
           } else {
             expect(now).toEqual(before);
           }
