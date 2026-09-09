@@ -187,6 +187,24 @@ describe('terrain / generate', () => {
     );
   });
 
+  it('draws no marsh where the rejection sampler ran out of tries', () => {
+    // `seed 248, level 9`, the case the property above flaked on at about one run in
+    // eight. Flat-and-low ground is 2.2% of that map — the flat parts are its tops and the
+    // low parts are its steep flanks — so 160 draws miss it 2.8% of the time, and the
+    // unconditioned draw `sampleWhere` used to end with put a marsh on ground falling at
+    // 46%. Pinned by seed, because a property that finds this once in eight runs is a
+    // property that says nothing on the other seven.
+    const t = make(248, 9);
+    const ground = readGround(t.relief);
+    const marshes = areasOf(t).filter((a) => a.kind === 'marsh');
+    expect(marshes.length).toBeGreaterThan(0);
+    for (const marsh of marshes) {
+      expect(suits(marsh.code, ground, positionOf(marsh))).toBe(true);
+    }
+    // And the redraw kept the count the requirement asked for rather than dropping a slot.
+    expect(areasOf(t)).toHaveLength(paramsFor(9).areas);
+  });
+
   it('puts every knoll on a rise and every pit in a hollow', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {

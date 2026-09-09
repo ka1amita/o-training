@@ -165,6 +165,15 @@ instantly without being able to name.
   answers and a property suite that flaked at that rate (`seed 2492758438, level 3`). The
   first draw is still 2.5x, so a round whose old fallback happened to be visible kept the
   distractor it had.
+- **`sampleWhere` returns null; it does not surrender to an unconditioned draw.** Same
+  lesson one function along. It used to end its budget with a point that ignored the
+  predicate, arguing that a map with no marsh is worse than a marsh on a gentle slope — but
+  an unconditioned draw is not a gentle slope, it is anywhere, and it put a marsh on ground
+  falling at 46% about one map in fifteen hundred (`seed 248, level 9`, where flat *and*
+  low is 2.2% of the map because the flat parts are its tops). `placeAreas` **redraws the
+  kind** instead: the count the requirement asked for is kept and nothing stands where it
+  contradicts the ground. A caller that would still rather have a point than nothing says
+  `?? anywhere(...)` at the call site, where the next line can be seen to check it.
 
 **Real maps**
 

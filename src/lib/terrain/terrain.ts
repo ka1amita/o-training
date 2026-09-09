@@ -445,26 +445,38 @@ export function readGround(relief: Relief): Ground {
 // Features that read the ground
 // ---------------------------------------------------------------------------------------
 
+/** Somewhere inside the margin, asking the ground nothing. */
+function anywhere(rng: Rng, size: number): Vec {
+  const lo = size * MARGIN;
+  const hi = size * (1 - MARGIN);
+  return { x: rng.range(lo, hi), y: rng.range(lo, hi) };
+}
+
 /**
  * Rejection sampling against a predicate, with the same budget and the same surrender as
  * `placePoints`: a slightly sparser map is harmless, a hung generator is not.
  *
- * The fallback ignores the predicate rather than returning nothing, because a map with no
- * marsh at all is a worse map than one with a marsh on a gentle slope instead of a flat.
+ * **It returns null rather than an unconditioned point.** It used to end with one last
+ * draw that ignored the predicate, on the reasoning that a map with no marsh is worse than
+ * a marsh on a gentle slope instead of a flat — but an unconditioned draw is not a gentle
+ * slope, it is anywhere, and it put a marsh on ground falling at 46% about one map in
+ * fifteen hundred. That is the wrongness `AGENTS.md` says an orienteer sees instantly, and
+ * it is the same unchecked-last-draw the `siblings` fallback had. A caller that really
+ * would rather have a point than nothing says so, in one word, at the call site.
  */
 function sampleWhere(
   rng: Rng,
   size: number,
   wanted: (p: Vec) => boolean,
   attempts = ATTEMPT_FACTOR,
-): Vec {
+): Vec | null {
   const lo = size * MARGIN;
   const hi = size * (1 - MARGIN);
   for (let i = 0; i < attempts; i++) {
     const p = { x: rng.range(lo, hi), y: rng.range(lo, hi) };
     if (wanted(p)) return p;
   }
-  return { x: rng.range(lo, hi), y: rng.range(lo, hi) };
+  return null;
 }
 
 /**
@@ -520,9 +532,19 @@ function placeAreas(
 
   for (const sink of sinks.slice(0, params.areas)) areas.push(shape('marsh', sink));
 
-  while (areas.length < params.areas) {
+  // A kind the ground refuses is **redrawn, not forced**. The flat-and-low ground a marsh
+  // needs is genuinely rare on a steeply tilted map — 2% of one, measured — and 160 draws
+  // miss it about one map in thirty when it is that rare. Forcing it there is a marsh on a
+  // hillside; drawing another kind for the slot keeps the count the requirement asked for
+  // and puts nothing anywhere it contradicts. The outer budget is the same one
+  // `placePoints` has: a slightly sparser map is harmless, a hung generator is not.
+  const budget = params.areas * ATTEMPT_FACTOR;
+  for (let attempt = 0; areas.length < params.areas && attempt < budget; attempt++) {
     const kind = rng.pick(AREA_KINDS);
     const head = sampleWhere(rng, params.size, (q) => suitsArea(kind, ground, q), AREA_ATTEMPTS);
+    // The kind the ground refused is **redrawn, not forced**, so a head that never came
+    // starts no chain either: the outer budget draws another kind for the slot.
+    if (!head) continue;
     areas.push(shape(kind, head));
 
     /**
@@ -533,7 +555,7 @@ function placeAreas(
      * ellipse per patch, however irregular its outline, every green on the map was a
      * separate island of about the same size, which is a texture no forest has.
      *
-     * Overlapping lobes need no new type: `perturb` still moves one of them, and one lobe
+     * Overlapping lobes need no new type: an `Edit` still moves one of them, and one lobe
      * of a chain sliding out is a change the eye catches as readily as a whole patch.
      */
     if (!isGreen(kind) || areas.length >= params.areas) continue;
@@ -599,7 +621,11 @@ function placeClusters(
     const kinds = onSlope ? CLUSTER_KINDS : BOULDER_FIELD_KINDS;
     const centre = onSlope
       ? sampleWhere(rng, size, (q) => slopeAt(ground.grid, q.x, q.y) > steep)
-      : sampleWhere(rng, size, () => true, 1);
+      : anywhere(rng, size);
+    // A rock field with no rock face to stand on is **not drawn somewhere else** — the
+    // same rule `placeAreas` follows one function along. Steep ground is a quarter of
+    // every map, so forty draws miss it about once in a hundred thousand.
+    if (!centre) continue;
     const down = downhillAt(ground.grid, centre.x, centre.y);
     const along =
       down.x === 0 && down.y === 0
@@ -670,9 +696,13 @@ function placePoints(rng: Rng, params: TerrainParams, count: number, ground: Gro
       if (!inside(p)) continue;
     } else if (kind === 'crag') {
       const steep = ground.slopeQuantile(CRAG_STEEPEST);
-      p = sampleWhere(rng, params.size, (q) => slopeAt(ground.grid, q.x, q.y) > steep);
+      // `anywhere` when the steep ground is not found: the `suitsPoint` check below is
+      // what makes this safe, and it is why this fallback is not the one `sampleWhere`
+      // stopped taking on its own.
+      p = sampleWhere(rng, params.size, (q) => slopeAt(ground.grid, q.x, q.y) > steep)
+        ?? anywhere(rng, params.size);
     } else {
-      p = sampleWhere(rng, params.size, () => true, 1);
+      p = anywhere(rng, params.size);
     }
     const feature = { kind, code: CODE_OF[kind], x: p.x, y: p.y, size: sizeFor(rng, kind) };
     if (!clear(feature)) continue;
@@ -956,10 +986,12 @@ function placeLines(rng: Rng, params: TerrainParams, ground: Ground): Drainage {
   const low = ground.quantile(0.92);
   let stream: Vec[] | null = null;
   for (let attempt = 0; attempt < 12 && !stream; attempt++) {
+    // A start the band did not contain is still a legal start: `traceStream` rejects a
+    // watercourse that comes out too short, and twelve attempts is the budget for that.
     const from = sampleWhere(rng, size, (p) => {
       const h = sampleGridAt(ground.grid, p.x, p.y);
       return h > high && h < low;
-    });
+    }) ?? anywhere(rng, size);
     stream = traceStream(ground, from, size);
   }
   if (stream) {
