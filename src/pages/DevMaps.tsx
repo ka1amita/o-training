@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { CardView } from '@/drills/mapDohledavka/Cards.tsx';
+import { mapDohledavka } from '@/drills/mapDohledavka/drill.ts';
+import { CONTROL_NAMES } from '@/drills/mapDohledavka/features.ts';
 import { seeded } from '@/lib/rng.ts';
 import MapView from '@/lib/terrain/MapView.tsx';
 import Relief from '@/lib/terrain/Relief.tsx';
@@ -9,8 +12,10 @@ import { generateTerrain, paramsFor } from '@/lib/terrain/terrain.ts';
  *
  * `AGENTS.md`: rendering is not tested, it is checked by eye. That is only safe if
  * looking is cheap, and reaching a pexeso board through four rounds of a real session is
- * not cheap. This shows many seeds at once, in the three framings the drills actually
- * use — whole map, 110 m crop, and contours beside the relief they describe.
+ * not cheap. This shows many seeds at once, in the framings the drills actually use —
+ * whole map, 110 m crop, contours beside the relief they describe, and a pair of Mapova
+ * dohledavka cards, where what has to be checked is whether a circle says which feature
+ * it is on.
  *
  * Dev build only. `App` loads it lazily behind `import.meta.env.DEV` so the module is
  * dropped from the production bundle rather than merely made unreachable.
@@ -59,6 +64,32 @@ export default function DevMaps() {
         >
           big
         </button>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="text-xs text-muted">mapova dohledavka, level {level}</div>
+        {[1, 2].map((seed) => {
+          const round = mapDohledavka.generate(seeded(seed), level);
+          return (
+            <div key={seed} className="grid grid-cols-2 gap-2">
+              {round.cards.map((card, i) => (
+                <Cell
+                  key={i}
+                  label={`${card.controls.map((c) => CONTROL_NAMES[c.kind]).join(', ')}${
+                    i === 1 ? ` — shared: ${CONTROL_NAMES[round.shared]}` : ''
+                  }`}
+                >
+                  <CardView
+                    card={card}
+                    radius={round.radius}
+                    onTap={() => {}}
+                    className="h-full w-full"
+                  />
+                </Cell>
+              ))}
+            </div>
+          );
+        })}
       </div>
 
       {SEEDS.map((seed) => {

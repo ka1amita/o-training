@@ -127,6 +127,36 @@ instantly without being able to name.
 - **No north lines.** Drawn at fixed world positions, a pexeso pair's two crops would show
   them at a known offset — an answer coming from something other than the ground.
 
+**Map dohledavka**
+
+- The answer is a **kind of feature**, so two cards need `2n - 1` of them between them:
+  nine at five controls. What a map supplies is not a free choice, and `shareOut` spends
+  the kinds only one card can draw *first* — handing out the contested ones strands a card
+  with decoys it has no site for.
+- **One nameable thing to a ring.** This is Dobble's no-overlap rule in map form: a circle
+  with a boulder at its centre and a knoll inside the ring can be read either way, and if
+  the other card circles a knoll the round has two answers. It is also what sizes the
+  circle: at ISOM's own 6 mm — 90 m of ground — a card offers a median of **one** usable
+  kind, at 4 mm four, and at the 3 mm drawn here seven. Nine at five controls is why
+  `generate` draws up to ten pairs of maps: only two pairs in three can supply them.
+- **A ride and rough open block a site without ever being answers.** A ride is a black
+  line like a path; 403 is the yellow of a clearing at half the screen. The greens are not
+  in that list: nothing in the vocabulary is a wash of green, and half the control circles
+  on a real map have some.
+- **`placePoints` puts knolls on `ground.maxima`** — which is exactly where a hilltop is.
+  Hill and knoll shadow each other constantly, and that is the map being honest rather
+  than the rule being harsh.
+- Symbols are **drawn wider than their feature point**: a crag is a line across the slope,
+  so its centre can be outside a ring with half of it inside. `drawnReach` measures what
+  the eye sees, not what the feature list says.
+- A landform is a site only if the **ground shows it** — `standsOut` asks the height field
+  for a full contour interval of relief, since an 8 m hill on ground already falling 10 m
+  over the same distance closes no contour. Round ones are then circled at the summit the
+  ground has, not at the centre the feature list gives, which on a ridge flank differ by
+  more than the circle's radius.
+- Generation trades the **control count** and nothing else: a pair of thin maps costs a
+  circle rather than the round. Measured over 800 rounds a level: once, at level 10.
+
 **Presentation**
 
 - **Never signal right/wrong by colour alone.** The green and red here are ΔE 5.8 apart

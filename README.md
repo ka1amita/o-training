@@ -17,6 +17,7 @@ npm install && npm run dev
 |---|---|
 | Match Madness | IOF control-description symbols against the clock |
 | Dohledávka | Dobble: two cards, one shared symbol, first tap wins. Two players, on one device or over a link |
+| Mapová dohledávka | The same game on two maps: several controls a card, one kind of feature circled on both |
 | Posunuté pexeso | Pairs are two offset crops of one map sharing a control. Match by recognising the ground |
 | Contours → relief | Read the brown lines, then pick the ground they describe |
 | Map memory | A map extract, briefly. Then pick the one you saw |
