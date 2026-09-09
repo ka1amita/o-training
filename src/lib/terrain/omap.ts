@@ -29,6 +29,31 @@ export interface OMap {
   readonly raster?: RasterLayer;
   /** Precomputed once per map, never per round. Filled by the pipeline, step 4. */
   readonly analysis?: MapAnalysis;
+  /** Where the map came from. Absent on a generated one, which came from a seed. */
+  readonly meta?: MapMeta;
+  /**
+   * Windows the pipeline scored, keyed by `WindowRequirement.id`.
+   *
+   * On the map rather than beside it because they *are* a fact about the map: which of
+   * its ground can answer which drill's question. `LibraryProvider` picks from this list
+   * instead of searching two kilometres of forest on a phone.
+   */
+  readonly windows?: Readonly<Record<string, readonly Crop[]>>;
+}
+
+/**
+ * What a map says about itself.
+ *
+ * `licence` and `attribution` cost nothing and are what a member-tier product needs the
+ * day a map owner asks. `scale` is the scale the cartography was drawn for — the renderer
+ * does not read it, import and salience do.
+ */
+export interface MapMeta {
+  readonly name: string;
+  readonly scale: number;
+  readonly source: 'xmap' | 'ocad' | 'image';
+  readonly licence?: string;
+  readonly attribution?: string;
 }
 
 export interface Vec {

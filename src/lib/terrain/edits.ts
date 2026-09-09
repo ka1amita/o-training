@@ -1,10 +1,9 @@
 import type { Rng } from '@/lib/rng.ts';
-import { bump } from './height.ts';
 import {
   areasOf, boundsOf, insideCrop, movedTo, pointsOf, positionOf, translated,
   type Crop, type Feature, type OMap, type Vec,
 } from './omap.ts';
-import { AnalyticRelief, type Relief, type Warp } from './relief.ts';
+import { AnalyticRelief, warpDisplacement, type Relief, type Warp } from './relief.ts';
 import { CONTRAST, semanticsOf, SEMANTICS, type Family, type IsomCode } from './semantics.ts';
 
 export type { Warp } from './relief.ts';
@@ -105,15 +104,15 @@ function applyOne(map: OMap, edit: Edit): OMap {
  */
 function carried(feature: Feature, w: Warp, map: OMap): Feature {
   const p = positionOf(feature);
-  const falloff = bump(Math.hypot(p.x - w.centre.x, p.y - w.centre.y) / w.radius);
-  if (falloff === 0) return feature;
+  const d = warpDisplacement(w, p.x, p.y);
+  if (d.x === 0 && d.y === 0) return feature;
   // Clamped to the map, exactly as `move` is and for the same reason: how far a
   // displacement can actually be taken is the map's answer, not the asker's. A warp on
   // the border therefore slides its knoll (`AnalyticRelief.warped` clamps too) and leaves
   // a boulder pinned at the edge — a corner case, and a visible map beats a feature off it.
   const to = {
-    x: Math.min(map.width, Math.max(0, p.x + w.dx * falloff)),
-    y: Math.min(map.height, Math.max(0, p.y + w.dy * falloff)),
+    x: Math.min(map.width, Math.max(0, p.x + d.x)),
+    y: Math.min(map.height, Math.max(0, p.y + d.y)),
   };
   return translated(feature, to.x - p.x, to.y - p.y);
 }
