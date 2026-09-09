@@ -6,6 +6,11 @@
     <meta name="theme-color" content="#1c1917" />
     <meta name="description" content="Off-forest orienteering drills: symbols, map memory, relief." />
     <title>OB Training</title>
+    <!-- The app icon, doubling as the favicon. Without it every page load asks for
+         /favicon.ico and logs a 404 in the console — noise that hides a real error, and
+         one the smoke test had to explain away. Vite rewrites the leading slash against
+         `base`, so this survives the /ob-training/ deploy the way the module script does. -->
+    <link rel="icon" type="image/png" href="/icon-192.png" />
   </head>
   <body>
     <div id="root"></div>
