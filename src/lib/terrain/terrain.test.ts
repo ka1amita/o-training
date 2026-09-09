@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import {
   generateTerrain, paramsFor, perturb, readGround, suitsArea, suitsPoint,
-  separationOf, MIN_POINT_SEPARATION, type Terrain,
+  separationOf, MIN_POINT_SEPARATION, type PointFeature, type Terrain,
 } from './terrain.ts';
 import { contributionOf, heightAt, maxHeightDifference, sampleGrid } from './height.ts';
 import { contoursOf, marchingSquares, stitch } from './contours.ts';
@@ -44,16 +44,33 @@ describe('terrain / generate', () => {
     // twice as long as a boulder is wide and a field of them needs the room.
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
+        // A level 10 map carries a hundred-odd points, so this is thousands of pairs per
+        // run and some 400 000 over the property. Asserting on each one spent three of the
+        // test's four seconds inside `expect` rather than on the generator, which put it
+        // close enough to the 5 s timeout to trip over it on a loaded runner. The loop
+        // measures every pair the same way and keeps the tightest; the assertion is made
+        // once, on that one. A pair that clears the bar by the least clears it for all.
         const { points } = make(seed, level);
+        let worst: readonly [PointFeature, PointFeature] | null = null;
+        let margin = Infinity;
         for (let i = 0; i < points.length; i++) {
           for (let j = i + 1; j < points.length; j++) {
             const a = points[i]!;
             const b = points[j]!;
             const gap = Math.hypot(a.x - b.x, a.y - b.y);
-            expect(gap, `${a.kind} and ${b.kind}`).toBeGreaterThanOrEqual(separationOf(a, b));
-            expect(gap).toBeGreaterThanOrEqual(MIN_POINT_SEPARATION);
+            // Both bars at once, because either can be the one a pair undercuts.
+            const slack = Math.min(gap - separationOf(a, b), gap - MIN_POINT_SEPARATION);
+            if (slack < margin) {
+              margin = slack;
+              worst = [a, b];
+            }
           }
         }
+        if (!worst) return;
+        const [a, b] = worst;
+        const gap = Math.hypot(a.x - b.x, a.y - b.y);
+        expect(gap, `${a.kind} and ${b.kind}`).toBeGreaterThanOrEqual(separationOf(a, b));
+        expect(gap).toBeGreaterThanOrEqual(MIN_POINT_SEPARATION);
       }),
       { numRuns: 200 },
     );
