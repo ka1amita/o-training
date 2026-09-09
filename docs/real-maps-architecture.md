@@ -1,7 +1,9 @@
 # Real orienteering maps beside generated ones
 
-A design note. **Steps 0–4 of section 7 are implemented** — the engine refactor and the
-offline import pipeline; steps 5 and 6 are still a description. It describes how the terrain engine would
+A design note, now implemented: **every step of section 7 is done** — the engine
+refactor, the offline import pipeline, the raster tier, and the policy that switches
+between sources. The per-step notes at the end of section 7 record where the code departs
+from the text below and why. It describes how the terrain engine would
 change so a drill can run on a real map — an OpenOrienteering Mapper `.xmap`, an OCAD
 `.ocd`, or a plain image exported from Livelox — as well as on the generated one, and
 switch between them per drill, per round, or per member tier without the drills noticing.
@@ -510,10 +512,13 @@ the comparison is one page.
    re-pin step 3 promised; the goldens have not moved since.
 5. **Raster tier.** ✅ Done. Image + world file → mask → `RasterLayer`;
    `maps/import/{png,raster}.ts` and `terrain/mask.ts`; pexeso and map memory over
-   image-only maps; the contours drill declines them. See the notes at the end of this
-   section.
-6. **Policy.** `MapPolicy` in the store, a settings screen, `MixedProvider`; `hello`
-   carries the policy.
+   image-only maps; the contours drill declines them. See the step 5 notes at the end of
+   this section.
+6. **Policy.** ✅ Done. `maps/policy.ts` and `MixedProvider`; `#/settings` writes the
+   policy and `DrillPage` builds the session's provider from it; `hello` carries the
+   provider id and the joiner answers with its own. The generated maps gained an
+   `analysis` from the same function the pipeline uses, which removed the two
+   `instanceof AnalyticRelief` fallbacks — see the step 6 notes below.
 
 Steps 0–3 are a refactor of the existing engine with no new capability and can ship on
 their own. Step 4 is the feature; 5 and 6 extend it.
@@ -582,11 +587,12 @@ their own. Step 4 is the feature; 5 and 6 extend it.
   inverse. Re-rasterising is a lossy round trip *everywhere*, including outside the
   support, which would leave a sibling differing over the whole map — the one thing compact
   support exists to prevent.
-- **The generated maps still carry no `analysis`**, so the `instanceof AnalyticRelief`
-  fallbacks in `edits.ts` and pexeso's `controlFor` stay. Filling it would change which
-  ground a warp picks up on every generated round, and step 4's whole discipline after its
-  first commit was that the goldens do not move again. Step 6 is the place, alongside
-  whatever else re-pins them.
+- **The generated maps left step 4 with no `analysis`**, so the `instanceof AnalyticRelief`
+  fallbacks in `edits.ts` and pexeso's `controlFor` stayed for the moment. Filling it
+  looked like it would change which ground a warp picks up on every generated round, and
+  step 4's whole discipline after its first commit was that the goldens do not move again.
+  Step 6 filled it without moving them — see its notes on why the candidates are the
+  generator's own landforms.
 - **`Colour` gained `white`.** On an ISOM map white is not the absence of ink, it is
   runnable forest, and an imported symbol drawn in it is one meant not to show.
 - **`RasterLayer` and `MapBundle.raster` are declared and unfilled**, as §2.2 allows;
@@ -671,6 +677,70 @@ node scripts/import-map.mjs map.xmap --image map.png --world map.pgw --name koko
   image is somebody's cartography and this repository has no licence to it. To look at a
   real one on `#/dev/maps`, import it into `public/maps/` and add the file to
   `BUNDLED_MAPS`.
+
+### Step 6, and where it departs from §5
+
+- **The generated map's landform candidates are the landforms it was built from.** Step 4
+  left the generated maps without an `analysis` and named step 6 as the place to fill it,
+  expecting the goldens to move. They did not, because filling it with the *curvature*
+  candidates §4.1 describes would have been wrong here, and both reasons were measured
+  before the choice was made. First, a generated map carries a metre of micro-relief at a
+  sixty-metre wavelength, which bends the surface harder than a twelve-metre hill two
+  hundred metres across: candidates came out at 4 m of amplitude where the landforms are at
+  12, and 57% of them under 3 m. Second, and decisively, `AnalyticRelief.warped` moves
+  **the landform nearest the warp's centre, whole**, and ignores the radius — so a warp
+  centred on a curvature peak declares one support and moves another. Over 2200 candidates
+  the ground that would actually move sat a median 49 m from the declared centre (p90
+  116 m) and was 1.7x its declared extent, with about half of them further away than their
+  own radius. `Warp.carries` would then carry features that never stood on the ground that
+  moved — the tell carrying exists to remove — and `Difference.footprint`, the number the
+  staircase is meant to drive on, would describe a disc the change is not in. Round quality
+  was comparable either way (contours `reliefDelta` median 6.90 m at level 10 both ways
+  against a 1.5 m floor, no `siblings` fallbacks, nothing invisible in map memory), so the
+  choice is about which warp describes what it does. `analyse` takes the candidates as an
+  option; everything else about a generated map's analysis is computed by the same code an
+  imported map's is.
+- **The analysis core moved to `terrain/analysis.ts`.** `maps/import/analyse.ts` imports
+  the provider for `requirementId`, and the provider imports the generator — so the
+  generator importing the analysis where it stood would have been a cycle. Stage five, the
+  window scoring, stays in `analyse.ts` because it is the half that reads a
+  `WindowRequirement`; `analyse.ts` re-exports `analyse`, `Analysis` and `RUNNABILITY_GRID`
+  unchanged, so the pipeline did not move.
+- **`MapPolicy.library` holds bundle names, not ids or URLs.** §5.1 says
+  `library: string[]` without saying of what. A URL would rot across the dev and Pages
+  bases; a content hash cannot be resolved to a file to fetch. The name is what a settings
+  screen can list before anything is downloaded, and `bundleUrl` puts it back together.
+- **A weight of zero is a fall-through, not an absence.** §5.1 gives `MixedProvider`
+  weights and says a declining provider falls through to "whatever it was composed with".
+  For `source: 'real'` that composition is the generator at weight zero: never drawn, still
+  there to catch the contours drill on a library with no relief. Without it, "real maps
+  only" is an error screen for a third of the drills.
+- **A forced choice consumes no rng.** Not in the note. `MixedProvider` draws no number
+  when only one part has a positive weight, so a policy at 100% one source produces exactly
+  that source's rounds rather than rounds shifted by the draw that chose it — which is what
+  makes the default's identity to `GeneratedProvider` exact rather than approximate.
+- **`hello` carries the provider id, not the `MapPolicy`.** §5.2 says the message gains
+  `mapPolicy`. The policy is not what has to match: two devices with the same policy and
+  different bundles derive different rounds, and the id is precisely the thing that decides
+  a round. It is also the smaller disclosure — a hash and a weight rather than a list of
+  what someone has downloaded.
+- **The joiner answers.** §5.2 says "a peer that lacks a bundle answers with what it has
+  and both fall back to `generated`", and with `hello` alone only the joiner can see the
+  disagreement. A `maps` message back is what makes *both* true; until it arrives the host
+  stays on generated, so a peer too old to send one leaves the match where it would have
+  been anyway. `PROTOCOL_VERSION` did not move, because a peer refuses any version but its
+  own and the whole point was that an older build still plays.
+- **Per-`(drill, policy)` progress is recorded but not yet used.** §8's second risk asks
+  for it. `SessionSummary` gains an optional `policySource`; the level and the chart stay
+  per drill, because splitting them now would divide the history every existing player has
+  into a curve and an empty one. The field is what lets that split happen later without
+  asking anyone to re-train, and it is optional because the summaries already on devices
+  carry no source at all.
+- **The settings screen loads every bundled map to list it.** §5 does not say where a map
+  list's facts come from; they come from each bundle's own `meta` and geometry, which means
+  reading the bundle. Cache-first, so it is one download per map ever, and the screen says
+  so. The alternative — a table of names and scales restated in the app — is a second
+  place for a map's facts to live and to drift.
 
 ---
 

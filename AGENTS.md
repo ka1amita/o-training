@@ -224,10 +224,9 @@ instantly without being able to name.
   returns null when no bundle satisfies a requirement, which is the whole difference from
   the generator — a provider that never says no hands the contours drill a flat map and
   calls it a hard round.
-- **The generated maps carry no `analysis`**, so `warpCandidates` and pexeso's
-  `controlFor` keep their `instanceof AnalyticRelief` fallbacks. Filling it would change
-  which ground a warp picks up on every generated round and re-pin the goldens, which step
-  4 promised not to do twice.
+- **Every map carries an `analysis`, the generated ones included**, and it is the only
+  place a warp or a pexeso control looks for landforms — the `instanceof AnalyticRelief`
+  fallbacks are gone. See **Map policy** below for what the generator hands it and why.
 
 **Cartography**
 
@@ -335,6 +334,54 @@ instantly without being able to name.
 - **Never signal right/wrong by colour alone.** The green and red here are ΔE 5.8 apart
   under deuteranopia, under the 8 that counts as separable. `Verdict` adds a tick or cross.
 - The progress chart is one series on one axis. Accuracy sits in the stat tiles.
+
+## Map policy
+
+Where a round's ground comes from — `src/lib/maps/policy.ts`, the settings screen, and
+`hello`. Step 6 of `docs/real-maps-architecture.md`.
+
+- **The provider id is part of a round's identity.** A round is a function of
+  `(seed, level, provider.id)`, not of `(seed, level)`. So an id has to name everything
+  that changes a round: `MixedProvider`'s names its parts, their shares *and* the order it
+  tries them in, because that order is the fall-through order. `LibraryProvider`'s names
+  the bundle content hashes, sorted, because the same maps in a different order are the
+  same library. Anything that builds a provider must go through `providerFor`, and a
+  provider whose id claims a source the device cannot resolve is the bug this prevents:
+  with nothing loaded, `providerFor` returns the plain generator and says `generated`.
+- **The default must stay `generated`.** Someone who never opens the settings screen plays
+  the rounds they played before this existed, and their device fetches nothing: `DrillPage`
+  loads bundles only for a policy that could use them. `DEFAULT_POLICY` is also what a
+  malformed stored record reads as — never a half-applied policy, because half a policy is
+  a provider whose id lies about the rounds it makes.
+- **A forced choice is not a draw.** `MixedProvider` draws no number when only one part has
+  a positive weight, so a mix at 100% one source consumes the rng exactly as that source
+  alone does. Drawing anyway would shift every round after it, and "100% generated" would
+  not be the generated rounds.
+- **A weight of zero is not absent.** It is never drawn but stays in the fall-through
+  order: "my rounds on real maps" is not "no round at all rather than a generated one", and
+  a library with no relief cannot answer the contours drill.
+- **`hello` carries ids and never map content.** A `library:` id is a list of content
+  hashes; two peers agree because the hashes agree, not because anyone described a map.
+  The joiner answers with its own id — without that reply only one side could see a
+  disagreement, and both falling back to `generated` would be one peer falling back alone.
+  The field is optional and **the protocol version did not move**: a peer refuses any
+  version but its own, so bumping it would end every game with an older phone to add a
+  field that phone does not read.
+- **The generated map's landform candidates are the landforms it was built from**, handed
+  to `analyse` rather than read off its curvature. Curvature is right for a surveyed
+  hillside and wrong here twice: a metre of micro-relief at a sixty-metre wavelength bends
+  the surface harder than a twelve-metre hill does, and `AnalyticRelief.warped` moves *the
+  landform nearest the warp's centre, whole* — so a candidate that is not a landform centre
+  declares one support and moves another. Measured: median 49 m between the two, and 1.7x
+  the declared extent. `Warp.carries` would then carry features that never stood on the
+  ground that moved.
+- **The badge is read off the round, not off the screen.** `mapsOfRound` finds the `OMap` a
+  round holds (`base`, or `maps` for pexeso) and `sourceBadge` turns it into one word. The
+  one rule applies to a badge exactly as it applies to an answer. `mix` is a real answer:
+  pexeso draws a map per pair.
+- **`SessionSummary.policySource` is optional and stays optional.** Summaries already on a
+  device were written by a build that recorded none, and inventing `generated` for them
+  would be a stored record claiming something it never said.
 
 ## Verify
 

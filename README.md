@@ -25,6 +25,13 @@ npm install && npm run dev
 Difficulty follows a 3-down-1-up staircase: three correct moves you up, one miss moves you
 down. It settles where you are right about 79% of the time.
 
+The three map drills run on maps generated on your device. **Settings** (from the bottom of
+the home screen) can switch them to windows onto real, surveyed maps, or to a mix in
+whatever proportion you like; the round header says `gen` or `real` for the ground you were
+given. A real map is downloaded the first time it is used and then kept on the device, so a
+session in the forest needs no signal. The default is generated, and a device that never
+opens that screen fetches nothing.
+
 Progress tracks **median response time per session** — the number a 2026 study on the
 Danish elite squad found falling 27% over six weeks of this kind of work, steeply through
 about session seven and then flattening.
@@ -67,8 +74,14 @@ to it; if you ever switch to HTTPS: `gh auth refresh -s workflow`.
 ## Privacy
 
 Stored on your device: a level per drill and a list of finished sessions
-(`{timestamp, responseMs, correct}`). Nothing else — no name, no identifier, no telemetry.
-Erase it all from the Progress screen.
+(`{timestamp, responseMs, correct}`), your map setting from Settings, and any map bundles
+you have used, cached so they work offline. Nothing else — no name, no identifier, no
+telemetry. Erase the levels, the sessions and the map setting from the Progress screen; the
+cached maps stay, since re-downloading them is not what "erase my progress" asks for.
+
+Playing over a link sends taps, a seed, and the **name** of your map setting — a hash of
+which maps you hold, so both phones can check they agree. No map and no part of one ever
+crosses the connection.
 
 **One exception worth knowing:** playing Dohledávka over a link opens a direct
 peer-to-peer connection, and that **discloses your IP address to the other player**.
