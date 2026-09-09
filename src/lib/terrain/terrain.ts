@@ -1,7 +1,8 @@
 import type { Rng } from '@/lib/rng.ts';
+import { analyse } from './analysis.ts';
 import { contributionOf, downhillAt, sampleGridAt, slopeAt, type Grid } from './height.ts';
 import { ISOM_SCALE } from './isom.ts';
-import type { Feature, OMap, Vec } from './omap.ts';
+import type { Feature, MapAnalysis, OMap, Vec } from './omap.ts';
 import { AnalyticRelief, type Landform, type Relief } from './relief.ts';
 import { CODE_OF, CRAG_STEEPEST, suits, type IsomCode } from './semantics.ts';
 import { areaOutline } from './shapes.ts';
@@ -1018,7 +1019,7 @@ export function generateTerrain(rng: Rng, params: TerrainParams): GeneratedMap {
   const areas = placeAreas(rng, params, ground, drainage.sinks, grain);
   const points = placePoints(rng, params, params.points, ground);
 
-  return {
+  const map: GeneratedMap = {
     id: 'generated',
     width: params.size,
     height: params.size,
@@ -1026,6 +1027,34 @@ export function generateTerrain(rng: Rng, params: TerrainParams): GeneratedMap {
     relief,
     features: toFeatures(drainage.lines, areas, points),
   };
+  // Analysed by the same function an imported map is, so that a warp and a pexeso control
+  // are chosen the same way whatever drew the ground — see `analysis.ts` and `edits.ts`.
+  return { ...map, analysis: analyse(map, { landforms: candidatesOf(landforms) }) };
+}
+
+/**
+ * The generator's landforms, as the analysis's candidates.
+ *
+ * `analyse` reads candidates off the **curvature** of the ground, because a surveyed
+ * hillside has to be asked where its landforms are. This map does not: it was built from a
+ * list of them, and asking curvature to find them again answers worse in two ways. It
+ * finds the micro-relief — a metre of noise at a sixty-metre wavelength bends the surface
+ * harder than a twelve-metre hill two hundred metres across, so the candidates come out at
+ * four metres of amplitude where the landforms are at twelve. And it disagrees with
+ * `AnalyticRelief.warped`, which moves **the landform nearest the warp's centre, whole**:
+ * a warp centred on a curvature peak between two knolls declares one support and moves
+ * another, so `Warp.carries` picks up features that are not standing on the ground that
+ * moved. That is the very tell carrying exists to remove.
+ *
+ * The radius is the half-extent along the long axis, which is what `warpCandidates` read
+ * off the relief before this existed — a circle around an ellipse, and the same circle.
+ */
+function candidatesOf(landforms: readonly Landform[]): MapAnalysis['landforms'] {
+  return landforms.map((f) => ({
+    centre: { x: f.x, y: f.y },
+    radius: f.radius * f.elongation,
+    amplitude: f.amplitude,
+  }));
 }
 
 /**

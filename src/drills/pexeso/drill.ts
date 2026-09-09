@@ -2,7 +2,6 @@ import { defineDrill, type Score } from '@/drills/types.ts';
 import type { RoundContext, WindowRequirement } from '@/lib/maps/provider.ts';
 import { deriveSeed, seeded, type Rng } from '@/lib/rng.ts';
 import { pointsOf, positionOf, type Crop, type OMap, type Vec } from '@/lib/terrain/omap.ts';
-import { AnalyticRelief } from '@/lib/terrain/relief.ts';
 import Play from './Play.tsx';
 
 /**
@@ -95,11 +94,11 @@ function controlFor(rng: Rng, map: OMap, halfSpan: number): Vec {
   const hi = map.width - halfSpan;
   const candidates = [
     ...pointsOf(map).map(positionOf),
-    // A summit is worth finding too. An imported map answers this from its analysis
-    // instead; until then only the analytic relief has landforms to offer.
-    ...(map.relief instanceof AnalyticRelief
-      ? map.relief.landforms.map((f) => ({ x: f.x, y: f.y }))
-      : []),
+    // A summit is worth finding too, and every map says where its summits are the same
+    // way: through its analysis. This used to ask the analytic relief for its landform
+    // parameters, which was a branch on which source drew the map — and one that offered
+    // a real map's summits to nobody.
+    ...(map.analysis?.landforms.map((l) => l.centre) ?? []),
     // A picture has no features to stand a control on, so the pipeline read some off its
     // mask: black and blue blobs, which is a boulder or a water hole and is exactly what
     // a control sits on. Appended last, so a map that has features keeps offering them in

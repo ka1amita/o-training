@@ -12,6 +12,7 @@ import { AnalyticRelief } from './relief.ts';
 import { goldenMap } from './golden.ts';
 import { CODE_OF } from './semantics.ts';
 import { contoursOf, marchingSquares, stitch } from './contours.ts';
+import { analyse, RUNNABILITY_GRID, type Analysis } from './analysis.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: 1, max: 10 });
@@ -204,6 +205,47 @@ describe('terrain / generate', () => {
   it('golden: fixed seeds at fixed levels', () => {
     const terrains = [1, 2, 3].flatMap((s) => [1, 5, 9].map((l) => make(s, l)));
     expect(hashJson(terrains.map(goldenMap))).toMatchInlineSnapshot(`"b6b1aff3"`);
+  });
+});
+
+describe('terrain / analysis', () => {
+  it('answers about itself the way an imported map does', () => {
+    // What deleted the two `instanceof AnalyticRelief` fallbacks: every map, whatever
+    // drew it, says where its landforms are through `analysis` and nowhere else.
+    fc.assert(
+      fc.property(anySeed, anyLevel, (seed, level) => {
+        const map = make(seed, level);
+        expect(map.analysis).toBeDefined();
+        expect(map.analysis!.landforms).toHaveLength(map.relief.landforms.length);
+      }),
+      { numRuns: 40 },
+    );
+  });
+
+  it('offers the landforms it was built from, not the ones curvature would find', () => {
+    // `AnalyticRelief.warped` moves the landform **nearest the warp's centre, whole**, so
+    // a candidate that is not a landform centre declares one support and moves another —
+    // and `Warp.carries` then picks up features that never stood on the ground that moved.
+    // Measured on this generator: curvature candidates sit a median 49 m from the landform
+    // they would actually move. See `candidatesOf`.
+    const map = make(7, 8);
+    const candidates = map.analysis!.landforms;
+    map.relief.landforms.forEach((f, i) => {
+      expect(candidates[i]!.centre).toEqual({ x: f.x, y: f.y });
+      expect(candidates[i]!.radius).toBe(f.radius * f.elongation);
+      expect(candidates[i]!.amplitude).toBe(f.amplitude);
+    });
+  });
+
+  it('carries the whole analysis an imported map carries, not only the landforms', () => {
+    // `OMap.analysis` promises only the landforms, because that is all any drill reads
+    // today. What is actually there is the pipeline's own `Analysis`, barriers and
+    // runnability raster included, so a route-choice drill would find the same fields
+    // whichever source drew the map.
+    const analysis = make(12, 6).analysis as Analysis;
+    expect(analysis.runnabilityGrid).toBe(RUNNABILITY_GRID);
+    expect(analysis.runnability).toHaveLength(RUNNABILITY_GRID * RUNNABILITY_GRID);
+    expect(analysis.barriers).toEqual(analyse(make(12, 6)).barriers);
   });
 });
 

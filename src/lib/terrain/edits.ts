@@ -5,7 +5,7 @@ import {
   areasOf, boundsOf, insideCrop, movedTo, pointsOf, positionOf, translated,
   type Crop, type Feature, type OMap, type Vec,
 } from './omap.ts';
-import { AnalyticRelief, warpDisplacement, type Relief, type Warp } from './relief.ts';
+import { warpDisplacement, type Relief, type Warp } from './relief.ts';
 import { CONTRAST, semanticsOf, SEMANTICS, type Family, type IsomCode } from './semantics.ts';
 
 export type { Warp } from './relief.ts';
@@ -162,21 +162,15 @@ function carried(feature: Feature, w: Warp, map: OMap): Feature {
 /**
  * Where a warp can pick up a piece of ground.
  *
- * The analytic relief knows its own landforms; an imported map does not, and its
- * candidates come from the pipeline's analysis — local extrema and their extents, which
- * is what `readGround` already finds. Nothing else may reach into `AnalyticRelief`.
+ * **One answer, from `analysis`, whatever drew the map.** There used to be a second: a
+ * generated map carried no analysis, so this reached into `AnalyticRelief` for the
+ * landform parameters — a branch on the source in the one function the whole refactor
+ * exists to keep source-neutral, and one that silently returned nothing for a DEM. The
+ * generator now analyses its own maps with the pipeline's own code (`terrain/analysis.ts`),
+ * so there is nothing left to fall back to and no map class named here.
  */
 function warpCandidates(map: OMap): readonly { readonly centre: Vec; readonly radius: number }[] {
-  if (map.analysis) {
-    return map.analysis.landforms.map((l) => ({ centre: l.centre, radius: l.radius }));
-  }
-  if (map.relief instanceof AnalyticRelief) {
-    return map.relief.landforms.map((f) => ({
-      centre: { x: f.x, y: f.y },
-      radius: f.radius * f.elongation,
-    }));
-  }
-  return [];
+  return map.analysis?.landforms.map((l) => ({ centre: l.centre, radius: l.radius })) ?? [];
 }
 
 interface Pool {
