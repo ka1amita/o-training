@@ -1,8 +1,14 @@
 import type { Rng } from '@/lib/rng.ts';
+import { contributionOf, downhillAt, sampleGridAt, slopeAt, type Grid } from './height.ts';
+import { ISOM_SCALE } from './isom.ts';
 import {
-  contributionOf, downhillAt, sampleGrid, sampleGridAt, slopeAt, type Grid,
-} from './height.ts';
+  areasOf, movedTo, pointsOf, positionOf, type Feature, type OMap, type Vec,
+} from './omap.ts';
+import { AnalyticRelief, type Landform, type Relief } from './relief.ts';
 import { CODE_OF, CRAG_STEEPEST, suits, type IsomCode } from './semantics.ts';
+import { areaOutline } from './shapes.ts';
+
+export type { Vec } from './omap.ts';
 
 /**
  * Terrain is a **list of named features**, not a field of noise.
@@ -10,7 +16,7 @@ import { CODE_OF, CRAG_STEEPEST, suits, type IsomCode } from './semantics.ts';
  * Fractal noise would be less code and the wrong model. Three things follow from features
  * that would not follow from noise:
  *
- *  - "The same map with one feature nudged" is an operation — `perturb` moves one thing.
+ *  - "The same map with one feature nudged" is an operation — an `Edit` moves one thing.
  *    Reseeding noise changes everything at once, which is a different map, not a sibling,
  *    and a distractor that differs everywhere teaches nothing about reading detail.
  *  - The map reads as a map, in the vocabulary an orienteer already has: knoll, marsh,
@@ -21,7 +27,6 @@ import { CODE_OF, CRAG_STEEPEST, suits, type IsomCode } from './semantics.ts';
  * World units are metres and the terrain is square.
  */
 
-export type LandformKind = 'hill' | 'depression' | 'spur' | 'reentrant';
 export type PointKind = 'boulder' | 'knoll' | 'pit' | 'tree' | 'crag';
 export type LineKind = 'path' | 'stream' | 'fence' | 'ride';
 /**
@@ -31,23 +36,16 @@ export type LineKind = 'path' | 'stream' | 'fence' | 'ride';
  */
 export type AreaKind = 'marsh' | 'open' | 'rough' | 'slow' | 'walk' | 'fight' | 'rock';
 
-export interface Landform {
-  readonly kind: LandformKind;
-  readonly x: number;
-  readonly y: number;
-  /** Half-extent of the bump, in metres. */
-  readonly radius: number;
-  /** Signed height in metres; negative digs a hollow. */
-  readonly amplitude: number;
-  /** Radians. Only meaningful when elongated. */
-  readonly rotation: number;
-  /** 1 is round; above 1 stretches along the rotation axis, making a spur or re-entrant. */
-  readonly elongation: number;
-}
-
-export interface PointFeature {
+/**
+ * What the generator thinks in, before the map exists.
+ *
+ * Three shapes rather than one `Feature`, because placement asks different questions of
+ * each: an area is a centre and two radii until `areaOutline` is asked for its edge, a
+ * line is a traced path, a point is a spot with a drawn size. `toFeatures` is where they
+ * become the one list an `OMap` carries.
+ */
+interface PointFeature {
   readonly kind: PointKind;
-  /** The semantic key. Derived from `kind` in `CODE_OF`, and nowhere else. */
   readonly code: IsomCode;
   readonly x: number;
   readonly y: number;
@@ -55,18 +53,13 @@ export interface PointFeature {
   readonly size: number;
 }
 
-export interface Vec {
-  readonly x: number;
-  readonly y: number;
-}
-
-export interface LineFeature {
+interface LineFeature {
   readonly kind: LineKind;
   readonly code: IsomCode;
   readonly points: readonly Vec[];
 }
 
-export interface AreaFeature {
+interface AreaFeature {
   readonly kind: AreaKind;
   readonly code: IsomCode;
   readonly x: number;
@@ -76,26 +69,10 @@ export interface AreaFeature {
   readonly rotation: number;
 }
 
-export interface Terrain {
-  /** Side of the square, in metres. */
-  readonly size: number;
-  /**
-   * Regional slope, in metres of fall per metre, as a gradient vector.
-   *
-   * Ground is never level. Without this the map is a few nested ovals floating in white,
-   * where a real map carries contours across every part of it — and a plain at exactly
-   * zero also gives a stream nowhere to drain to.
-   */
-  readonly tilt: Vec;
-  /**
-   * Seed for the micro-relief in `noise.ts`. **Carried through `perturb` unchanged**, so
-   * siblings share their noise exactly and still differ only where a landform moved.
-   */
-  readonly noiseSeed: number;
-  readonly landforms: readonly Landform[];
-  readonly points: readonly PointFeature[];
-  readonly lines: readonly LineFeature[];
-  readonly areas: readonly AreaFeature[];
+/** What `generateTerrain` returns: an `OMap` whose relief is the analytic one, so a
+ *  caller that wants the landform parameters can still have them. */
+export interface GeneratedMap extends OMap {
+  readonly relief: AnalyticRelief;
 }
 
 export interface TerrainParams {
@@ -187,13 +164,23 @@ const SYMBOL_GAP = 5;
 /**
  * Half the ground a symbol covers, in metres.
  *
+ * Asked of the **code**, not of the generator's `kind`, so that it answers for a feature
+ * off an imported map as readily as for one this file placed: 203 is drawn as a line
+ * across the slope and takes the room its own length asks for, and every other point
+ * symbol is a dot.
+ *
  * Floored at the dot radius even for a crag, so `MIN_POINT_SEPARATION` is a floor no pair
  * can undercut whatever `size` it was handed. Generation never draws a crag that short,
  * but a constant others reason with should not depend on that.
  */
 const DOT_EXTENT = 3;
-const extentOf = (f: PointFeature): number =>
-  f.kind === 'crag' ? Math.max(f.size / 2, DOT_EXTENT) : DOT_EXTENT;
+/** What `separationOf` needs of a feature: which symbol it is, and how big it was drawn. */
+interface Drawn {
+  readonly code: IsomCode;
+  readonly size?: number;
+}
+const extentOf = (f: Drawn): number =>
+  f.code === CODE_OF.crag ? Math.max((f.size ?? 0) / 2, DOT_EXTENT) : DOT_EXTENT;
 
 /**
  * How far apart two point features have to be to still read as two.
@@ -203,7 +190,7 @@ const extentOf = (f: PointFeature): number =>
  * because a crag is a line twice as long as a boulder is wide. The bar is the room the
  * two symbols actually take.
  */
-export const separationOf = (a: PointFeature, b: PointFeature): number =>
+export const separationOf = (a: Drawn, b: Drawn): number =>
   extentOf(a) + extentOf(b) + SYMBOL_GAP;
 
 
@@ -244,7 +231,7 @@ export function paramsFor(level: number, size = 420): TerrainParams {
 /** Keeps a feature clear of the edge so a crop near the border still has context. */
 const MARGIN = 0.12;
 
-/** Fall across the whole map, in metres. See `Terrain.tilt`. */
+/** Fall across the whole map, in metres. See `AnalyticParams.tilt`. */
 const TILT_DROP: readonly [number, number] = [14, 32];
 
 /**
@@ -412,10 +399,10 @@ export interface Ground {
 
 const GROUND_RESOLUTION = 64;
 
-export function readGround(terrain: Terrain): Ground {
-  const grid = sampleGrid(terrain, GROUND_RESOLUTION);
+export function readGround(relief: Relief): Ground {
+  const grid = relief.sampleGrid(GROUND_RESOLUTION);
   const { n, values } = grid;
-  const step = terrain.size / n;
+  const step = grid.size / n;
 
   const pick = (sorted: Float32Array) => (fraction: number) =>
     sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(fraction * (sorted.length - 1))))]!;
@@ -487,7 +474,7 @@ function sampleWhere(
  * The rules themselves live in `semantics.ts` as data, so that a marsh imported from a
  * real map and a marsh this file placed answer the same question the same way.
  */
-export function suitsArea(kind: AreaKind, ground: Ground, p: Vec): boolean {
+function suitsArea(kind: AreaKind, ground: Ground, p: Vec): boolean {
   return suits(CODE_OF[kind], ground, p);
 }
 
@@ -499,7 +486,7 @@ export function suitsArea(kind: AreaKind, ground: Ground, p: Vec): boolean {
  * of metres: that the ground still agrees with the symbol. A knoll on a hummock that is
  * not quite the summit is a fine knoll; a knoll in a hollow is a contradiction.
  */
-export function suitsPoint(kind: PointKind, ground: Ground, p: Vec): boolean {
+function suitsPoint(kind: PointKind, ground: Ground, p: Vec): boolean {
   return suits(CODE_OF[kind], ground, p);
 }
 
@@ -1009,7 +996,7 @@ function placeLines(rng: Rng, params: TerrainParams, ground: Ground): Drainage {
  * sampled once into a `Ground`. Streams, marshes, crags and knolls are all decided from
  * that one sampling, which is what makes them agree with the contours drawn over them.
  */
-export function generateTerrain(rng: Rng, params: TerrainParams): Terrain {
+export function generateTerrain(rng: Rng, params: TerrainParams): GeneratedMap {
   const tiltAngle = rng.range(0, 2 * Math.PI);
   const gradient = rng.range(TILT_DROP[0], TILT_DROP[1]) / params.size;
   const tilt: Vec = { x: Math.cos(tiltAngle) * gradient, y: Math.sin(tiltAngle) * gradient };
@@ -1019,17 +1006,8 @@ export function generateTerrain(rng: Rng, params: TerrainParams): Terrain {
   const noiseSeed = rng.next() | 1;
 
   const landforms = placeLandforms(rng, params, tiltAngle);
-
-  const bare: Terrain = {
-    size: params.size,
-    tilt,
-    noiseSeed,
-    landforms,
-    points: [],
-    lines: [],
-    areas: [],
-  };
-  const ground = readGround(bare);
+  const relief = new AnalyticRelief({ size: params.size, tilt, noiseSeed, landforms });
+  const ground = readGround(relief);
 
   // Water before ground cover: a marsh is put where the stream ends, so the two agree.
   const drainage = placeLines(rng, params, ground);
@@ -1039,13 +1017,58 @@ export function generateTerrain(rng: Rng, params: TerrainParams): Terrain {
         drainage.lines[0]!.points[1]!.x - drainage.lines[0]!.points[0]!.x,
       )
     : rng.range(0, Math.PI);
+  const areas = placeAreas(rng, params, ground, drainage.sinks, grain);
+  const points = placePoints(rng, params, params.points, ground);
 
   return {
-    ...bare,
-    lines: drainage.lines,
-    areas: placeAreas(rng, params, ground, drainage.sinks, grain),
-    points: placePoints(rng, params, params.points, ground),
+    id: 'generated',
+    width: params.size,
+    height: params.size,
+    scale: ISOM_SCALE,
+    relief,
+    features: toFeatures(drainage.lines, areas, points),
   };
+}
+
+/**
+ * The three builders, become the one list.
+ *
+ * An area keeps its parameters in `shape` beside the outline traced from them, because
+ * `areaOutline` seeds its wander from those parameters and from nothing else: an area
+ * that is moved has to come out the same shape, or a map-memory distractor differs by
+ * more than the level asked for. Ids are positional and stable within the map; an edit
+ * names one.
+ */
+function toFeatures(
+  lines: readonly LineFeature[],
+  areas: readonly AreaFeature[],
+  points: readonly PointFeature[],
+): Feature[] {
+  return [
+    ...lines.map((l, i): Feature => ({
+      id: `line-${i}`,
+      code: l.code,
+      kind: l.kind,
+      geometry: { kind: 'polyline', points: l.points },
+    })),
+    ...areas.map((a, i): Feature => {
+      const shape = { kind: a.kind, x: a.x, y: a.y, rx: a.rx, ry: a.ry, rotation: a.rotation };
+      return {
+        id: `area-${i}`,
+        code: a.code,
+        kind: a.kind,
+        geometry: { kind: 'polygon', rings: [areaOutline(shape)] },
+        shape,
+      };
+    }),
+    ...points.map((f, i): Feature => ({
+      id: `point-${i}`,
+      code: f.code,
+      kind: f.kind,
+      geometry: { kind: 'point', at: { x: f.x, y: f.y } },
+      size: f.size,
+    })),
+  ];
 }
 
 /** What a perturbation did, so a test can assert it did something. */
@@ -1057,7 +1080,7 @@ export interface Change {
 }
 
 export interface Perturbed {
-  readonly terrain: Terrain;
+  readonly map: GeneratedMap;
   readonly change: Change;
 }
 
@@ -1069,7 +1092,7 @@ export interface Perturbed {
  * identical to the answer.
  */
 export function perturb(
-  terrain: Terrain,
+  map: GeneratedMap,
   rng: Rng,
   options: {
     readonly distance: number;
@@ -1089,6 +1112,8 @@ export function perturb(
 ): Perturbed {
   const { distance, within } = options;
   const target = options.target ?? 'any';
+  const points = pointsOf(map);
+  const areas = areasOf(map);
 
   const inWindow = (f: Vec): boolean =>
     !within ||
@@ -1106,9 +1131,9 @@ export function perturb(
     target === 'landform'
       ? ['landform']
       : [
-          ...(terrain.landforms.length > 0 ? (['landform'] as const) : []),
-          ...(terrain.points.length > 0 ? (['point'] as const) : []),
-          ...(terrain.areas.length > 0 ? (['area'] as const) : []),
+          ...(map.relief.landforms.length > 0 ? (['landform'] as const) : []),
+          ...(points.length > 0 ? (['point'] as const) : []),
+          ...(areas.length > 0 ? (['area'] as const) : []),
         ];
   const what = rng.pick(pools);
 
@@ -1118,25 +1143,32 @@ export function perturb(
   const angle = rng.range(0, 2 * Math.PI);
   const dx = Math.cos(angle) * distance;
   const dy = Math.sin(angle) * distance;
-  const clamp = (v: number) => Math.min(terrain.size, Math.max(0, v));
+  const clamp = (v: number) => Math.min(map.width, Math.max(0, v));
 
   if (what === 'landform') {
-    const index = rng.pick(usable(terrain.landforms));
-    const landforms = terrain.landforms.map((f, i) =>
-      i === index ? { ...f, x: clamp(f.x + dx), y: clamp(f.y + dy) } : f,
-    );
-    return { terrain: { ...terrain, landforms }, change: { what, index, distance } };
+    const index = rng.pick(usable(map.relief.landforms));
+    const f = map.relief.landforms[index]!;
+    const relief = map.relief.warped({
+      centre: { x: f.x, y: f.y },
+      radius: f.radius * f.elongation,
+      dx,
+      dy,
+    });
+    return { map: { ...map, relief }, change: { what, index, distance } };
   }
-  if (what === 'point') {
-    const index = rng.pick(usable(terrain.points));
-    const points = terrain.points.map((f, i) =>
-      i === index ? { ...f, x: clamp(f.x + dx), y: clamp(f.y + dy) } : f,
-    );
-    return { terrain: { ...terrain, points }, change: { what, index, distance } };
-  }
-  const index = rng.pick(usable(terrain.areas));
-  const areas = terrain.areas.map((f, i) =>
-    i === index ? { ...f, x: clamp(f.x + dx), y: clamp(f.y + dy) } : f,
-  );
-  return { terrain: { ...terrain, areas }, change: { what, index, distance } };
+
+  // A window with nothing of this kind in it falls back to the whole list, exactly as
+  // `usable` says; the pick is still one draw either way, so the stream does not move.
+  const list = what === 'point' ? points : areas;
+  const index = rng.pick(usable(list.map(positionOf)));
+  const moved = list[index]!;
+  const from = positionOf(moved);
+  const to = { x: clamp(from.x + dx), y: clamp(from.y + dy) };
+  return {
+    map: {
+      ...map,
+      features: map.features.map((f) => (f.id === moved.id ? movedTo(f, to) : f)),
+    },
+    change: { what, index, distance },
+  };
 }

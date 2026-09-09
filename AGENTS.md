@@ -92,6 +92,10 @@ stale state and the round could not finish.
 
 **Terrain reads the ground**
 
+- **A map is an `OMap`; the generator is one source of them.** `tilt`, `noiseSeed` and
+  `landforms` are `AnalyticRelief`'s parameters, not the map's — a surveyed map has relief
+  and no landforms at all. Everything that reads the ground reads `relief.heightAt`,
+  `sampleGrid` or `contours`, and nothing outside `relief.ts` reaches for a landform.
 - **One table says what a symbol means**: `semantics.ts`, keyed by ISOM code. `suitsArea`
   and `suitsPoint` are two lines over it, and the ground rules — quantiles, maxima, minima
   — are its data. A second `kind → code` mapping anywhere is the bug: a real map's `410`
@@ -134,6 +138,9 @@ instantly without being able to name.
 
 **Cartography**
 
+- **`MapView` styles by code**, through the table in `isom.ts` beside the widths. A code
+  the table does not know still draws — the plainest symbol of its geometry in its colour
+  class — because a real map arrives with about 120 of them and sixteen are drawn here.
 - Widths are **millimetres of paper at 1:15000** (`isom.ts`). `mm → unit` is `100 / 28`
   and window-independent, because a crop is the same map printed at a larger scale.
 - **Slope tags are not decoration.** Without them a knoll and a hollow are the same

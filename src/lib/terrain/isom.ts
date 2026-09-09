@@ -1,3 +1,5 @@
+import { semanticsOf, type IsomCode } from './semantics.ts';
+
 /**
  * ISOM 2017-2 drawing parameters.
  *
@@ -20,6 +22,9 @@
  * right: contour 0.14 mm x 3.571 = `unit * 0.5`.
  */
 export const UNITS_PER_MM = 100 / 28;
+
+/** The scale these millimetres are millimetres of. An `OMap` says which it was drawn for. */
+export const ISOM_SCALE = 15000;
 
 /** Width or length in `unit`s, from millimetres of paper. */
 export const mm = (millimetres: number): number => millimetres * UNITS_PER_MM;
@@ -105,3 +110,117 @@ export const MARSH = {
   dashLength: mm(0.55),
   width: mm(0.25),
 } as const;
+
+
+/**
+ * How each code is drawn.
+ *
+ * The renderer used to `switch` on the generator's `kind`, which meant only the sixteen
+ * things the generator makes could ever be drawn. Keyed by code, an imported feature goes
+ * through the same table, and a code the table does not know still draws — as the
+ * plainest symbol of its geometry in its own colour class, which is what keeps a real map
+ * legible on the day it arrives rather than one table row at a time.
+ *
+ * Widths and radii are the `mm()` values above, in `unit`s per unit of window; `MapView`
+ * multiplies by `unit`. A symbol's picture is geometry and not only colour, so a point
+ * names the primitive to draw — the app owns five of them, and a pit is a triangle
+ * however the table is keyed.
+ */
+export interface AreaStyle {
+  readonly geometry: 'area';
+  /** 311 is a pattern and never a wash: solid blue is open water, and to whoever is
+   *  running the two mean opposite things — one is crossable and slow, the other a detour. */
+  readonly pattern?: 'marsh';
+  readonly fill?: string;
+  readonly opacity?: number;
+}
+
+export interface LineStyle {
+  readonly geometry: 'line';
+  readonly stroke: string;
+  readonly width: number;
+  readonly dash?: readonly [number, number];
+  /** 508: the light corridor a ride is cut as, under its dashed line. */
+  readonly casing?: { readonly stroke: string; readonly width: number };
+  /** 516: the ticks that tell a fence from a path. */
+  readonly ticks?: { readonly spacing: number; readonly length: number };
+}
+
+export interface PointStyle {
+  readonly geometry: 'point';
+  readonly shape: 'disc' | 'triangle' | 'ring' | 'cliff';
+  readonly colour: string;
+  readonly radius: number;
+  readonly width?: number;
+}
+
+export type SymbolStyle = AreaStyle | LineStyle | PointStyle;
+
+export const SYMBOL: Readonly<Record<IsomCode, SymbolStyle>> = {
+  // Areas.
+  '311': { geometry: 'area', pattern: 'marsh' },
+  '401': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.open },
+  '403': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough },
+  '406': { geometry: 'area', fill: COLOUR.green, opacity: GREEN_SCREEN.slow },
+  '408': { geometry: 'area', fill: COLOUR.green, opacity: GREEN_SCREEN.walk },
+  '410': { geometry: 'area', fill: COLOUR.green, opacity: GREEN_SCREEN.fight },
+  '212': { geometry: 'area', fill: COLOUR.grey, opacity: 0.5 },
+
+  // Lines.
+  '505': { geometry: 'line', stroke: COLOUR.black, width: LINE.pathWidth, dash: LINE.pathDash },
+  '306': { geometry: 'line', stroke: COLOUR.blue, width: LINE.smallStreamWidth },
+  '516': {
+    geometry: 'line',
+    stroke: COLOUR.black,
+    width: LINE.fenceWidth,
+    ticks: { spacing: LINE.fenceTickSpacing, length: LINE.fenceTickLength },
+  },
+  '508': {
+    geometry: 'line',
+    stroke: COLOUR.black,
+    width: LINE.rideWidth,
+    dash: LINE.rideDash,
+    casing: { stroke: COLOUR.ground, width: LINE.rideBackground },
+  },
+
+  // Points.
+  '206': { geometry: 'point', shape: 'disc', colour: COLOUR.black, radius: POINT.boulderRadius },
+  '112': { geometry: 'point', shape: 'disc', colour: COLOUR.brown, radius: POINT.knollRadius },
+  '116': { geometry: 'point', shape: 'triangle', colour: COLOUR.brown, radius: POINT.pitRadius },
+  '418': {
+    geometry: 'point', shape: 'ring', colour: COLOUR.green,
+    radius: POINT.treeRadius, width: POINT.treeWidth,
+  },
+  '203': {
+    geometry: 'point', shape: 'cliff', colour: COLOUR.black,
+    radius: POINT.cliffWidth, width: POINT.cliffTagWidth,
+  },
+};
+
+const PLAIN: Readonly<Record<'brown' | 'black' | 'blue' | 'green' | 'yellow' | 'grey' | 'purple', string>> = {
+  brown: COLOUR.brown,
+  black: COLOUR.black,
+  blue: COLOUR.blue,
+  green: COLOUR.green,
+  yellow: COLOUR.yellow,
+  grey: COLOUR.grey,
+  purple: COLOUR.purple,
+};
+
+/**
+ * The style for a code, or the plainest symbol of its colour class.
+ *
+ * An unknown code is not an error: ~120 symbols exist and sixteen are drawn here, so a
+ * real map will arrive full of them. Drawing one plainly is what makes a map readable
+ * from day one; fidelity then grows a row at a time, checked by eye on `#/dev/maps`.
+ */
+export function styleFor(code: IsomCode): SymbolStyle | undefined {
+  const known = SYMBOL[code];
+  if (known) return known;
+  const semantics = semanticsOf(code);
+  if (!semantics) return undefined;
+  const colour = PLAIN[semantics.colour];
+  if (semantics.geometry === 'area') return { geometry: 'area', fill: colour, opacity: 0.5 };
+  if (semantics.geometry === 'line') return { geometry: 'line', stroke: colour, width: mm(0.14) };
+  return { geometry: 'point', shape: 'disc', colour, radius: mm(0.25) };
+}

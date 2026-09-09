@@ -1,4 +1,4 @@
-import type { AreaFeature, Vec } from './terrain.ts';
+import type { AreaShape, Vec } from './omap.ts';
 
 /**
  * Irregular outlines for area features.
@@ -8,13 +8,13 @@ import type { AreaFeature, Vec } from './terrain.ts';
  * a green edge is what tells you which green edge it is.
  *
  * The wander is deterministic, and the seed is **the feature's shape, never its
- * position**. `perturb` moves an area; if `x` and `y` fed the hash, moving it would also
+ * position**. An edit moves an area; if `x` and `y` fed the hash, moving it would also
  * reshape it, and a map-memory distractor would differ by far more than the `distance`
  * its level asked for. Silently easier rounds are worse than obvious ones.
  */
 
 /** FNV-1a over the shape fields, quantised so float noise cannot flip the hash. */
-function shapeSeed(area: AreaFeature): number {
+function shapeSeed(area: AreaShape): number {
   const parts = [
     area.kind,
     Math.round(area.rx * 64),
@@ -42,9 +42,9 @@ const VERTICES = 28;
  * A closed loop of world points around the feature.
  *
  * Radii stay within about ±30% of the ellipse, so the area still covers roughly the
- * ground `rx`/`ry` claim and the culling box in `MapView` remains sound.
+ * ground `rx`/`ry` claim.
  */
-export function areaOutline(area: AreaFeature): Vec[] {
+export function areaOutline(area: AreaShape): Vec[] {
   const seed = shapeSeed(area);
   // Phases from disjoint bit fields of one hash: three draws, no generator to thread.
   const phases = HARMONICS.map((_, i) => (((seed >>> (i * 9)) & 0x1ff) / 0x200) * 2 * Math.PI);
@@ -66,6 +66,3 @@ export function areaOutline(area: AreaFeature): Vec[] {
   }
   return points;
 }
-
-/** The widest the outline can stray from the centre, for culling. */
-export const OUTLINE_SLACK = 1 + HARMONICS.reduce((s, h) => s + h.amplitude, 0);

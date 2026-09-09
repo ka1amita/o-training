@@ -9,10 +9,13 @@ const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: 1, max: 10 });
 const gen = (seed: number, level: number) => drill.generate(seeded(seed), level);
 
-/** The generator's decisions, not the shape of the round. See `goldenMap`. */
+/**
+ * The generator's decisions, not the shape of the round. See `goldenMap` — the field
+ * names here are part of the hash and are frozen, so they are not the round's own.
+ */
 const golden = (round: PexesoRound) => ({
   pairs: round.pairs,
-  terrains: round.terrains.map(goldenMap),
+  terrains: round.maps.map(goldenMap),
   cards: round.cards,
   shift: round.shift,
   cropSize: round.cropSize,
@@ -78,9 +81,9 @@ describe('pexeso / generate', () => {
     );
   });
 
-  it('gives each pair its own terrain', () => {
+  it('gives each pair its own map', () => {
     const round = gen(5, 9);
-    const shapes = new Set(round.terrains.map((t) => hashJson(goldenMap(t))));
+    const shapes = new Set(round.maps.map((m) => hashJson(goldenMap(m))));
     expect(shapes.size).toBe(round.pairs);
   });
 

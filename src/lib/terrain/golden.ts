@@ -1,4 +1,5 @@
-import type { Terrain } from './terrain.ts';
+import { areasOf, linesOf, pointsOf, positionOf } from './omap.ts';
+import type { GeneratedMap } from './terrain.ts';
 
 /**
  * A map reduced to **the generator's decisions**, for the golden hashes.
@@ -17,12 +18,12 @@ import type { Terrain } from './terrain.ts';
  * See also `hashJson`, which quantises to six decimals so a hash pins the generator and
  * not the engine's last float bit.
  */
-export function goldenMap(t: Terrain): unknown {
+export function goldenMap(map: GeneratedMap): unknown {
   return {
-    size: t.size,
-    tilt: { x: t.tilt.x, y: t.tilt.y },
-    noiseSeed: t.noiseSeed,
-    landforms: t.landforms.map((f) => ({
+    size: map.width,
+    tilt: { x: map.relief.tilt.x, y: map.relief.tilt.y },
+    noiseSeed: map.relief.noiseSeed,
+    landforms: map.relief.landforms.map((f) => ({
       kind: f.kind,
       x: f.x,
       y: f.y,
@@ -31,14 +32,23 @@ export function goldenMap(t: Terrain): unknown {
       rotation: f.rotation,
       elongation: f.elongation,
     })),
-    points: t.points.map((f) => ({
-      kind: f.kind, code: f.code, x: f.x, y: f.y, size: f.size,
+    points: pointsOf(map).map((f) => {
+      const at = positionOf(f);
+      return { kind: f.kind, code: f.code, x: at.x, y: at.y, size: f.size };
+    }),
+    lines: linesOf(map).map((l) => ({
+      kind: l.kind,
+      code: l.code,
+      points: l.geometry.kind === 'polyline' ? l.geometry.points.map((p) => ({ x: p.x, y: p.y })) : [],
     })),
-    lines: t.lines.map((l) => ({
-      kind: l.kind, code: l.code, points: l.points.map((p) => ({ x: p.x, y: p.y })),
-    })),
-    areas: t.areas.map((a) => ({
-      kind: a.kind, code: a.code, x: a.x, y: a.y, rx: a.rx, ry: a.ry, rotation: a.rotation,
+    areas: areasOf(map).map((a) => ({
+      kind: a.kind,
+      code: a.code,
+      x: a.shape?.x,
+      y: a.shape?.y,
+      rx: a.shape?.rx,
+      ry: a.shape?.ry,
+      rotation: a.shape?.rotation,
     })),
   };
 }

@@ -1,8 +1,10 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
 import { differsWithin, siblings } from '@/drills/shared/siblings.ts';
 import type { Rng } from '@/lib/rng.ts';
-import type { Crop } from '@/lib/terrain/MapView.tsx';
-import { generateTerrain, type Terrain, type TerrainParams } from '@/lib/terrain/terrain.ts';
+import type { Crop } from '@/lib/terrain/omap.ts';
+import {
+  generateTerrain, type GeneratedMap, type TerrainParams,
+} from '@/lib/terrain/terrain.ts';
 import Play from './Play.tsx';
 
 /**
@@ -18,7 +20,7 @@ import Play from './Play.tsx';
  * shifted off-screen leaves two identical cards and a round with two right answers.
  */
 export interface MapMemoryRound {
-  readonly options: readonly Terrain[];
+  readonly options: readonly GeneratedMap[];
   readonly correctIndex: number;
   /** The same window for the target and every candidate. */
   readonly crop: Crop;
@@ -79,8 +81,8 @@ export const mapMemory = defineDrill<MapMemoryRound, MapMemoryAnswer>({
     const base = generateTerrain(rng, terrainFor(level));
 
     const crop: Crop = {
-      x: rng.range(0, base.size - CROP_SIZE),
-      y: rng.range(0, base.size - CROP_SIZE),
+      x: rng.range(0, base.width - CROP_SIZE),
+      y: rng.range(0, base.width - CROP_SIZE),
       size: CROP_SIZE,
     };
 
@@ -110,7 +112,7 @@ export const mapMemory = defineDrill<MapMemoryRound, MapMemoryAnswer>({
     });
 
     const { x, y, size } = round.crop;
-    if (x < 0 || y < 0 || x + size > answer.size || y + size > answer.size) {
+    if (x < 0 || y < 0 || x + size > answer.width || y + size > answer.width) {
       problems.push('the window runs off the map');
     }
     if (round.exposureMs <= 0) problems.push('exposureMs must be positive');

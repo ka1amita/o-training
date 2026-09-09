@@ -1,9 +1,12 @@
-import { sampleGrid, sampleGridAt, type Grid } from '@/lib/terrain/height.ts';
-import { POINT } from '@/lib/terrain/isom.ts';
-import { OUTLINE_SLACK } from '@/lib/terrain/shapes.ts';
-import type {
-  AreaKind, Landform, LandformKind, LineFeature, LineKind, PointFeature, PointKind, Terrain, Vec,
-} from '@/lib/terrain/terrain.ts';
+import { sampleGridAt, type Grid } from '@/lib/terrain/height.ts';
+import { POINT, styleFor } from '@/lib/terrain/isom.ts';
+import {
+  areasOf, boundsOf, linesOf, pointsOf, positionOf,
+  type Feature, type Vec,
+} from '@/lib/terrain/omap.ts';
+import type { Landform, LandformKind } from '@/lib/terrain/relief.ts';
+import type { IsomCode } from '@/lib/terrain/semantics.ts';
+import type { GeneratedMap } from '@/lib/terrain/terrain.ts';
 
 /**
  * What a control circle can be hung on, and where.
@@ -14,25 +17,47 @@ import type {
  * so the vocabulary of kinds is the drill's answer space, and it has to be one a control
  * could really sit in.
  *
+ * The vocabulary is keyed by **ISOM code**, like every other thing in the app that has to
+ * hold for an imported feature as well as a generated one: an imported 206 and a generated
+ * boulder are one answer, or the round could share a kind with itself and not know.
+ *
  * Left out on purpose:
  *
  *  - **Vegetation screens.** Nobody sets a control on "green": the greens are a runnability
  *    scale, and three shades of one as three answers is a colour-matching game. Rough open
  *    goes with them — it is the same yellow as a clearing at half the screen, and telling
  *    401 from 403 through a control circle is not a question worth asking.
- *  - **Rides.** `makeStraightOrWandering` draws a ride straight, so it has no bend to hang
- *    a control on, and a circle halfway along a featureless corridor marks nothing.
+ *  - **Rides.** A ride is drawn dead straight, so it has no bend to hang a control on, and
+ *    a circle halfway along a featureless corridor marks nothing.
  *
- * Two of those still get in the way. See `LOOKALIKES`.
+ * Two of those still get in the way. See `BLOCKING`.
  */
 export type ControlKind =
-  | PointKind
+  | 'boulder' | 'knoll' | 'pit' | 'tree' | 'crag'
   | LandformKind
-  | Extract<LineKind, 'path' | 'stream' | 'fence'>
-  | Extract<AreaKind, 'marsh' | 'open' | 'rock'>;
+  | 'path' | 'stream' | 'fence'
+  | 'marsh' | 'open' | 'rock';
 
-/** Areas a control can be set on. The rest of them are ground cover, not features. */
-const AREA_KINDS: readonly AreaKind[] = ['marsh', 'open', 'rock'];
+/**
+ * The codes a circle can be hung on, and what a control description would call them.
+ *
+ * Areas that are ground cover rather than features — the greens — are simply absent, as
+ * is any code the table does not name: an unknown symbol off a real map is not an answer,
+ * because the player has no word for it either.
+ */
+const ANSWERS: Readonly<Record<IsomCode, ControlKind>> = {
+  '206': 'boulder',
+  '112': 'knoll',
+  '116': 'pit',
+  '418': 'tree',
+  '203': 'crag',
+  '505': 'path',
+  '306': 'stream',
+  '516': 'fence',
+  '311': 'marsh',
+  '401': 'open',
+  '212': 'rock',
+};
 
 /**
  * Drawn like an answer, but never one.
@@ -47,7 +72,7 @@ const AREA_KINDS: readonly AreaKind[] = ['marsh', 'open', 'rock'];
  * under a circle reads as ground rather than as the thing circled — which is just as well,
  * since half the control circles on a real map have some.
  */
-const LOOKALIKES: readonly (LineKind | AreaKind)[] = ['ride', 'rough'];
+const BLOCKING: readonly IsomCode[] = ['508', '403'];
 
 /** What the circle is on, in the words a control description would use. */
 export const CONTROL_NAMES: Readonly<Record<ControlKind, string>> = {
@@ -88,7 +113,8 @@ interface Nameable {
 
 interface Unanswerable extends Nameable {
   readonly answerable: false;
-  readonly kind: Extract<LineKind, 'ride'> | Extract<AreaKind, 'rough'>;
+  /** The code, since a blocker has no name in the answer space. */
+  readonly kind: IsomCode;
 }
 
 /** A place a control could go, and the object it would then be marking. */
@@ -199,12 +225,12 @@ const MIN_BEND_SPACING = 45;
  * there marks a length of path rather than a place on it. The ends are left out too: they
  * are on the map border, where the circle would run off the card.
  */
-function bendsOf(line: LineFeature): Vec[] {
+function bendsOf(points: readonly Vec[]): Vec[] {
   const bends: Vec[] = [];
-  for (let i = 1; i < line.points.length - 1; i++) {
-    const before = line.points[i - 1]!;
-    const here = line.points[i]!;
-    const after = line.points[i + 1]!;
+  for (let i = 1; i < points.length - 1; i++) {
+    const before = points[i - 1]!;
+    const here = points[i]!;
+    const after = points[i + 1]!;
     const turn = Math.abs(
       Math.atan2(after.y - here.y, after.x - here.x) -
         Math.atan2(here.y - before.y, here.x - before.x),
@@ -220,31 +246,53 @@ function bendsOf(line: LineFeature): Vec[] {
 /**
  * How far the drawn symbol spreads from the point the feature is at, in metres.
  *
- * `MapView` draws these at fixed millimetres of paper, and a crag as a line across the
- * slope that is wider than the feature's own size — so a crag whose *centre* is outside a
- * ring can still have half of itself inside one. The ring test is about what a player
- * sees, so it measures what is drawn.
+ * `MapView` draws these at fixed millimetres of paper through the style table, and 203 as
+ * a line across the slope that is wider than the feature's own size — so a crag whose
+ * *centre* is outside a ring can still have half of itself inside one. The ring test is
+ * about what a player sees, so it measures what is drawn, and it asks the same table the
+ * renderer asks.
  */
-function drawnReach(point: PointFeature, unit: number): number {
+function drawnReach(point: Feature, unit: number): number {
+  const style = styleFor(point.code);
   const symbol =
-    point.kind === 'boulder' ? POINT.boulderRadius
-    : point.kind === 'knoll' ? POINT.knollRadius
-    : point.kind === 'pit' ? POINT.pitRadius
-    : point.kind === 'tree' ? POINT.treeRadius
-    : POINT.cliffWidth * 3;
-  return Math.max(point.size, symbol * unit);
+    point.code === '203'
+      ? POINT.cliffWidth * 3
+      : style?.geometry === 'point' ? style.radius : POINT.boulderRadius;
+  return Math.max(point.size ?? 0, symbol * unit);
+}
+
+/**
+ * How far an area spreads from the point it is marked at.
+ *
+ * Measured off the outline the map actually carries rather than off the radii it was
+ * generated from: an imported area has an outline and no radii, and for a generated one
+ * the traced ring is what the eye sees anyway. It is the whole of the area another circle
+ * has to keep out of.
+ */
+function areaReach(area: Feature, at: Vec): number {
+  if (area.geometry.kind !== 'polygon') {
+    const box = boundsOf(area);
+    return Math.max(box.maxX - box.minX, box.maxY - box.minY) / 2;
+  }
+  let reach = 0;
+  for (const ring of area.geometry.rings) {
+    for (const p of ring) reach = Math.max(reach, Math.hypot(p.x - at.x, p.y - at.y));
+  }
+  return reach;
 }
 
 /** Everything on this map a player could name, and where a control could go on it. */
-function candidatesOf(terrain: Terrain): (Site | Unanswerable)[] {
-  const grid = sampleGrid(terrain, GRID);
-  const unit = terrain.size / 100;
+function candidatesOf(map: GeneratedMap): (Site | Unanswerable)[] {
+  const grid = map.relief.sampleGrid(GRID);
+  const unit = map.width / 100;
   const raw: (Site | Unanswerable)[] = [];
 
-  terrain.points.forEach((p, i) => {
-    const at = { x: p.x, y: p.y };
+  pointsOf(map).forEach((p, i) => {
+    const kind = ANSWERS[p.code];
+    if (!kind) return;
+    const at = positionOf(p);
     raw.push({
-      kind: p.kind,
+      kind,
       at,
       shape: [at],
       reach: drawnReach(p, unit),
@@ -253,7 +301,7 @@ function candidatesOf(terrain: Terrain): (Site | Unanswerable)[] {
     });
   });
 
-  terrain.landforms.forEach((f, i) => {
+  map.relief.landforms.forEach((f, i) => {
     // A spur has no summit to stand on: it is read along its length, so the circle goes on
     // the middle of it. A hill or a hollow is read at its top or bottom.
     const at = f.elongation > 1.2 ? { x: f.x, y: f.y } : summitOf(grid, f);
@@ -263,30 +311,35 @@ function candidatesOf(terrain: Terrain): (Site | Unanswerable)[] {
     raw.push({ kind: f.kind, at, shape: [at], reach: 0, source: `landform:${i}`, answerable: true });
   });
 
-  terrain.lines.forEach((line, i) => {
-    const shape = line.points;
-    if (line.kind === 'ride') {
-      // `at` is never read for these; a straight line has no bend to offer anyway.
-      raw.push({ kind: line.kind, at: shape[0]!, shape, reach: 0, source: `line:${i}`, answerable: false });
+  linesOf(map).forEach((line, i) => {
+    if (line.geometry.kind !== 'polyline') return;
+    const shape = line.geometry.points;
+    if (BLOCKING.includes(line.code)) {
+      // `at` is never read for these; a ride is straight and has no bend to offer anyway.
+      raw.push({
+        kind: line.code, at: shape[0]!, shape, reach: 0, source: `line:${i}`, answerable: false,
+      });
       return;
     }
-    for (const at of bendsOf(line)) {
-      raw.push({ kind: line.kind, at, shape, reach: 0, source: `line:${i}`, answerable: true });
+    const kind = ANSWERS[line.code];
+    if (!kind) return;
+    for (const at of bendsOf(shape)) {
+      raw.push({ kind, at, shape, reach: 0, source: `line:${i}`, answerable: true });
     }
   });
 
-  terrain.areas.forEach((area, i) => {
-    if (!AREA_KINDS.includes(area.kind) && !LOOKALIKES.includes(area.kind)) return;
-    const at = { x: area.x, y: area.y };
+  areasOf(map).forEach((area, i) => {
+    const kind = ANSWERS[area.code];
+    const blocks = BLOCKING.includes(area.code);
+    if (!kind && !blocks) return;
+    const at = positionOf(area);
     raw.push({
-      ...(area.kind === 'rough'
-        ? { answerable: false, kind: area.kind }
-        : { answerable: true, kind: area.kind as Extract<AreaKind, ControlKind> }),
+      ...(kind ? { answerable: true as const, kind } : { answerable: false as const, kind: area.code }),
       at,
       shape: [at],
       // An area is marked from its middle, and it is the whole of it that another circle
       // has to keep out of.
-      reach: Math.max(area.rx, area.ry) * OUTLINE_SLACK,
+      reach: areaReach(area, at),
       source: `area:${i}`,
     });
   });
@@ -305,22 +358,22 @@ function candidatesOf(terrain: Terrain): (Site | Unanswerable)[] {
  *
  * Same-kind neighbours are allowed: two boulders in one ring still say boulder.
  *
- * It is also what sets the size of the circle. The generator keeps point features 22 m
+ * It is also what sets the size of the circle. The generator keeps point features a symbol
  * apart and puts knolls on the tops of hills, so a wide ring has a second nameable thing
  * in it nearly everywhere and the sites run out before the round is built. Measured on a
  * level 10 card: 3 mm across leaves a median of seven kinds a card and nine between two of
  * them, which is what five controls need; 4 mm leaves four; ISOM's own 6 mm leaves one.
  */
-export function sitesOf(terrain: Terrain, radius: number): Site[] {
-  const raw = candidatesOf(terrain);
+export function sitesOf(map: GeneratedMap, radius: number): Site[] {
+  const raw = candidatesOf(map);
   return raw
     .filter((c) => c.answerable)
     .filter(
       (c) =>
         c.at.x >= radius &&
         c.at.y >= radius &&
-        c.at.x <= terrain.size - radius &&
-        c.at.y <= terrain.size - radius,
+        c.at.x <= map.width - radius &&
+        c.at.y <= map.width - radius,
     )
     .filter((c) =>
       raw.every(

@@ -66,7 +66,7 @@ export default function Play({ round, onDone }: PlayProps<PexesoRound, PexesoAns
               >
                 {isUp ? (
                   <MapView
-                    terrain={round.terrains[card.pairId]!}
+                    map={round.maps[card.pairId]!}
                     crop={card.crop}
                     control={card.control}
                     className="block h-full w-full"

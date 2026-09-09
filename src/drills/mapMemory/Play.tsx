@@ -50,7 +50,7 @@ export default function Play({ round, onDone }: PlayProps<MapMemoryRound, MapMem
         <p className="m-0 text-sm text-muted">Look.</p>
         <div className="w-full max-w-[20rem] overflow-hidden rounded-xl border border-line">
           <MapView
-            terrain={answer}
+            map={answer}
             crop={round.crop}
             className="block h-full w-full"
           />
@@ -82,7 +82,7 @@ export default function Play({ round, onDone }: PlayProps<MapMemoryRound, MapMem
                 }`}
               >
                 {/* The identical window on every candidate: only the ground differs. */}
-                <MapView terrain={option} crop={round.crop} className="block h-full w-full" />
+                <MapView map={option} crop={round.crop} className="block h-full w-full" />
                 {state !== 'idle' && <Verdict kind={state} />}
               </button>
             </li>

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { hashJson, seeded } from '@/lib/rng.ts';
-import type { Terrain } from '@/lib/terrain/terrain.ts';
+import { areasOf, linesOf, pointsOf, positionOf, type OMap } from '@/lib/terrain/omap.ts';
+import { CODE_OF } from '@/lib/terrain/semantics.ts';
 import {
   mapDohledavka as drill, paramsFor, CIRCLE_FRACTION,
   type Control, type MapDobbleRound,
@@ -12,12 +13,12 @@ const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: drill.bounds.min, max: drill.bounds.max });
 const gen = (seed: number, level: number) => drill.generate(seeded(seed), level);
 
-/** Where the terrain itself says a feature of this kind is, ignoring the drill's own view. */
-function positionsOf(terrain: Terrain, kind: ControlKind): { x: number; y: number }[] {
-  return [
-    ...terrain.points.filter((p) => p.kind === kind),
-    ...terrain.areas.filter((a) => a.kind === kind),
-  ];
+/** Where the map itself says a feature of this kind is, ignoring the drill's own view. */
+function positionsOf(map: OMap, kind: ControlKind): { x: number; y: number }[] {
+  const code = CODE_OF[kind as keyof typeof CODE_OF];
+  return [...pointsOf(map), ...areasOf(map)]
+    .filter((f) => f.code === code)
+    .map(positionOf);
 }
 
 describe('map dohledavka / generate', () => {
@@ -53,15 +54,16 @@ describe('map dohledavka / generate', () => {
         const round = gen(seed, level);
         for (const card of round.cards) {
           for (const control of card.controls) {
-            const exact = positionsOf(card.terrain, control.kind).some(
+            const exact = positionsOf(card.map, control.kind).some(
               (p) => p.x === control.x && p.y === control.y,
             );
-            const online = card.terrain.lines.some(
+            const online = linesOf(card.map).some(
               (line) =>
-                line.kind === control.kind &&
-                line.points.some((p) => p.x === control.x && p.y === control.y),
+                line.code === CODE_OF[control.kind as keyof typeof CODE_OF] &&
+                line.geometry.kind === 'polyline' &&
+                line.geometry.points.some((p) => p.x === control.x && p.y === control.y),
             );
-            const relief = card.terrain.landforms.some(
+            const relief = card.map.relief.landforms.some(
               (f) =>
                 f.kind === control.kind &&
                 Math.hypot(f.x - control.x, f.y - control.y) <= f.radius,
@@ -84,7 +86,7 @@ describe('map dohledavka / generate', () => {
           for (const control of card.controls) {
             for (const kind of Object.keys(CONTROL_NAMES) as ControlKind[]) {
               if (kind === control.kind) continue;
-              for (const other of positionsOf(card.terrain, kind)) {
+              for (const other of positionsOf(card.map, kind)) {
                 expect(Math.hypot(other.x - control.x, other.y - control.y))
                   .toBeGreaterThanOrEqual(round.radius);
               }
@@ -103,7 +105,7 @@ describe('map dohledavka / generate', () => {
         for (const card of round.cards) {
           for (const c of card.controls) {
             expect(Math.min(c.x, c.y)).toBeGreaterThanOrEqual(round.radius);
-            expect(Math.max(c.x, c.y)).toBeLessThanOrEqual(card.terrain.size - round.radius);
+            expect(Math.max(c.x, c.y)).toBeLessThanOrEqual(card.map.width - round.radius);
           }
           for (let i = 0; i < card.controls.length; i++) {
             for (let j = i + 1; j < card.controls.length; j++) {
@@ -134,7 +136,7 @@ describe('map dohledavka / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const [a, b] = gen(seed, level).cards;
-        expect(hashJson(a.terrain)).not.toBe(hashJson(b.terrain));
+        expect(hashJson(a.map)).not.toBe(hashJson(b.map));
       }),
       { numRuns: 40 },
     );
@@ -181,8 +183,8 @@ describe('map dohledavka / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const round = gen(seed, level);
-        expect(round.radius).toBeCloseTo(round.cards[0].terrain.size * CIRCLE_FRACTION, 9);
-        expect(round.cards[0].terrain.size).toBe(round.cards[1].terrain.size);
+        expect(round.radius).toBeCloseTo(round.cards[0].map.width * CIRCLE_FRACTION, 9);
+        expect(round.cards[0].map.width).toBe(round.cards[1].map.width);
       }),
       { numRuns: 20 },
     );
@@ -218,7 +220,7 @@ describe('map dohledavka / determinism', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     const rounds = [1, 2].flatMap((s) => [1, 5, 9].map((l) => gen(s, l)));
-    expect(hashJson(rounds)).toMatchInlineSnapshot(`"7a27dec2"`);
+    expect(hashJson(rounds)).toMatchInlineSnapshot(`"6a4601f3"`);
   });
 });
 
@@ -270,7 +272,7 @@ describe('map dohledavka / wellFormed detects what it claims to', () => {
   it('catches both cards being the same map', () => {
     const twins: MapDobbleRound = {
       ...good,
-      cards: [good.cards[0], { ...good.cards[1], terrain: good.cards[0].terrain }],
+      cards: [good.cards[0], { ...good.cards[1], map: good.cards[0].map }],
     };
     expect(drill.wellFormed(twins).join(' ')).toContain('the same map');
   });

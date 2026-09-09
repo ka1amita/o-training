@@ -2,7 +2,9 @@ import { defineDrill, type Score } from '@/drills/types.ts';
 import { siblings } from '@/drills/shared/siblings.ts';
 import type { Rng } from '@/lib/rng.ts';
 import { maxHeightDifference } from '@/lib/terrain/height.ts';
-import { generateTerrain, paramsFor as terrainParams, type Terrain } from '@/lib/terrain/terrain.ts';
+import {
+  generateTerrain, paramsFor as terrainParams, type GeneratedMap,
+} from '@/lib/terrain/terrain.ts';
 import Play from './Play.tsx';
 
 /**
@@ -17,7 +19,7 @@ import Play from './Play.tsx';
  * target would produce a distractor identical to the answer.
  */
 export interface ContoursRound {
-  readonly options: readonly Terrain[];
+  readonly options: readonly GeneratedMap[];
   readonly correctIndex: number;
 }
 
@@ -77,7 +79,7 @@ export const contours = defineDrill<ContoursRound, ContoursAnswer>({
       if (index === round.correctIndex) return;
       // The invariant that makes the round answerable: every other relief has to be
       // visibly different ground, or the card describes two of them equally well.
-      const difference = maxHeightDifference(answer, option);
+      const difference = maxHeightDifference(answer.relief, option.relief);
       if (difference < MIN_HEIGHT_DIFFERENCE) {
         problems.push(`option ${index} differs from the answer by only ${difference.toFixed(2)} m`);
       }

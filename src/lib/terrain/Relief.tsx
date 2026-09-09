@@ -1,9 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { sampleGrid } from './height.ts';
-import type { Terrain } from './terrain.ts';
+import type { Relief as ReliefField } from './relief.ts';
 
 /**
- * The same terrain as shaded relief.
+ * The same ground, shaded.
  *
  * Canvas, not SVG — this is the one thing in the app that is genuinely per-pixel. It is
  * also the only place a drill's *appearance* carries information, so the shading is fixed
@@ -21,11 +20,11 @@ const LIGHT = { x: -0.6, y: -0.6, z: 0.53 };
 const AMBIENT = 0.34;
 
 export interface ReliefProps {
-  readonly terrain: Terrain;
+  readonly relief: ReliefField;
   readonly className?: string;
 }
 
-export default function Relief({ terrain, className }: ReliefProps) {
+export default function Relief({ relief, className }: ReliefProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -34,8 +33,8 @@ export default function Relief({ terrain, className }: ReliefProps) {
     if (!canvas || !context) return;
 
     const n = RESOLUTION;
-    const grid = sampleGrid(terrain, n);
-    const step = terrain.size / n;
+    const grid = relief.sampleGrid(n);
+    const step = grid.size / n;
     const image = context.createImageData(n, n);
     const at = (i: number, j: number) => grid.values[j * (n + 1) + i]!;
 
@@ -68,7 +67,7 @@ export default function Relief({ terrain, className }: ReliefProps) {
     }
 
     context.putImageData(image, 0, 0);
-  }, [terrain]);
+  }, [relief]);
 
   return <canvas ref={ref} width={RESOLUTION} height={RESOLUTION} className={className} />;
 }

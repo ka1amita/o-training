@@ -1,5 +1,4 @@
-import { microRelief } from './noise.ts';
-import type { Landform, Terrain } from './terrain.ts';
+import type { Landform, Relief } from './relief.ts';
 
 /**
  * Height is the sum of the landforms, each a smooth bump with **compact support**: it is
@@ -10,7 +9,7 @@ import type { Landform, Terrain } from './terrain.ts';
  * differs from the answer across the whole map — the opposite of the drill. Compact
  * support keeps a local change local.
  */
-function bump(distance: number): number {
+export function bump(distance: number): number {
   if (distance >= 1) return 0;
   const t = 1 - distance * distance;
   return t * t;
@@ -28,26 +27,6 @@ export function contributionOf(f: Landform, x: number, y: number): number {
   return f.amplitude * bump(Math.hypot(lx, ly) / f.radius);
 }
 
-/**
- * Height is a **regional slope**, plus the landforms, plus a metre of micro-relief.
- *
- * The slope is not decoration. Without it the ground between features is exactly flat at
- * exactly zero, so the map is a few nested ovals floating in white — and real ground is
- * never level, so real maps carry contours everywhere. It also guarantees drainage:
- * every point has somewhere downhill to send a stream, which is what stops the descent
- * in `generateTerrain` from stalling in a plain.
- *
- * Tilt and `noiseSeed` both survive `perturb` untouched, so siblings differ only where
- * the moved landform reaches.
- */
-export function heightAt(terrain: Terrain, x: number, y: number): number {
-  const half = terrain.size / 2;
-  let h = terrain.tilt.x * (x - half) + terrain.tilt.y * (y - half);
-  h += microRelief(terrain.noiseSeed, x, y);
-  for (const f of terrain.landforms) h += contributionOf(f, x, y);
-  return h;
-}
-
 export interface Grid {
   /** Samples per side. The array holds (n + 1)^2 values, row-major from the top-left. */
   readonly n: number;
@@ -57,21 +36,35 @@ export interface Grid {
   readonly max: number;
 }
 
-export function sampleGrid(terrain: Terrain, n: number): Grid {
+/**
+ * The loop every `Relief` samples itself with, given only `heightAt` and an extent.
+ *
+ * It lives here rather than on the interface so a source that has no analytic height
+ * function — a DEM, which *is* a grid — can hand its own array over instead of being made
+ * to answer a million point queries to rebuild what it already had.
+ */
+export function heightGrid(
+  source: { heightAt(x: number, y: number): number },
+  size: number,
+  n: number,
+): Grid {
   const values = new Float32Array((n + 1) * (n + 1));
-  const step = terrain.size / n;
+  const step = size / n;
   let min = Infinity;
   let max = -Infinity;
   for (let j = 0; j <= n; j++) {
     for (let i = 0; i <= n; i++) {
-      const h = heightAt(terrain, i * step, j * step);
+      const h = source.heightAt(i * step, j * step);
       values[j * (n + 1) + i] = h;
       if (h < min) min = h;
       if (h > max) max = h;
     }
   }
-  return { n, size: terrain.size, values, min, max };
+  return { n, size, values, min, max };
 }
+
+/** `(n + 1)^2` samples of a relief over its own extent. */
+export const sampleGrid = (relief: Relief, n: number): Grid => relief.sampleGrid(n);
 
 /** Bilinear sample of a traced grid, in metres. Outside the grid it clamps to the edge. */
 export function sampleGridAt(grid: Grid, x: number, y: number): number {
@@ -107,20 +100,19 @@ export function downhillAt(grid: Grid, x: number, y: number): { x: number; y: nu
 }
 
 /**
- * The largest height difference between two terrains over a sampled grid.
+ * The largest height difference between two reliefs over a sampled grid.
  *
  * This is what "the distractor is actually different" means for a drill read off the
- * relief, and it is why perturbation targets a landform there: moving a boulder leaves
+ * relief, and it is why a relief drill's edit has to be a warp: moving a boulder leaves
  * this at zero.
  */
-export function maxHeightDifference(a: Terrain, b: Terrain, n = 32): number {
-  const step = a.size / n;
+export function maxHeightDifference(a: Relief, b: Relief, n = 32): number {
+  const left = a.sampleGrid(n).values;
+  const right = b.sampleGrid(n).values;
   let worst = 0;
-  for (let j = 0; j <= n; j++) {
-    for (let i = 0; i <= n; i++) {
-      const d = Math.abs(heightAt(a, i * step, j * step) - heightAt(b, i * step, j * step));
-      if (d > worst) worst = d;
-    }
+  for (let i = 0; i < left.length; i++) {
+    const d = Math.abs(left[i]! - right[i]!);
+    if (d > worst) worst = d;
   }
   return worst;
 }

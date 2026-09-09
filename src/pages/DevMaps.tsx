@@ -93,7 +93,7 @@ export default function DevMaps() {
       </div>
 
       {SEEDS.map((seed) => {
-        const terrain = generateTerrain(seeded(seed), paramsFor(level, size));
+        const map = generateTerrain(seeded(seed), paramsFor(level, size));
         // Somewhere with ground in it: the middle of the map, offset per seed so the
         // sheet is not six views of the same corner.
         const crop = {
@@ -106,16 +106,16 @@ export default function DevMaps() {
             <div className="text-xs text-muted">seed {seed}</div>
             <div className={`grid gap-2 ${big ? 'grid-cols-1' : 'grid-cols-4'}`}>
               <Cell label="map">
-                <MapView terrain={terrain} className="block h-full w-full" />
+                <MapView map={map} className="block h-full w-full" />
               </Cell>
               <Cell label={`crop ${CROP} m`}>
-                <MapView terrain={terrain} crop={crop} className="block h-full w-full" />
+                <MapView map={map} crop={crop} className="block h-full w-full" />
               </Cell>
               <Cell label="contours">
-                <MapView terrain={terrain} contoursOnly className="block h-full w-full" />
+                <MapView map={map} contoursOnly className="block h-full w-full" />
               </Cell>
               <Cell label="relief">
-                <Relief terrain={terrain} className="block h-full w-full" />
+                <Relief relief={map.relief} className="block h-full w-full" />
               </Cell>
             </div>
           </div>

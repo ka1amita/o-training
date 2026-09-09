@@ -2,17 +2,20 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import {
-  generateTerrain, paramsFor, perturb, readGround, suitsArea, suitsPoint,
-  separationOf, MIN_POINT_SEPARATION, type PointFeature, type Terrain,
+  generateTerrain, paramsFor, perturb, readGround, separationOf, MIN_POINT_SEPARATION,
+  type GeneratedMap,
 } from './terrain.ts';
-import { contributionOf, heightAt, maxHeightDifference, sampleGrid } from './height.ts';
+import { suits } from './semantics.ts';
+import { contributionOf, maxHeightDifference, sampleGrid } from './height.ts';
+import { areasOf, linesOf, pointsOf, positionOf, type Feature } from './omap.ts';
+import { AnalyticRelief } from './relief.ts';
 import { goldenMap } from './golden.ts';
 import { CODE_OF } from './semantics.ts';
 import { contoursOf, marchingSquares, stitch } from './contours.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: 1, max: 10 });
-const make = (seed: number, level = 5): Terrain =>
+const make = (seed: number, level = 5): GeneratedMap =>
   generateTerrain(seeded(seed), paramsFor(level));
 
 describe('terrain / generate', () => {
@@ -28,12 +31,16 @@ describe('terrain / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const t = make(seed, level);
-        const inside = (v: number) => v >= 0 && v <= t.size;
-        for (const f of [...t.landforms, ...t.points, ...t.areas]) {
-          expect(inside(f.x) && inside(f.y)).toBe(true);
+        const inside = (v: number) => v >= 0 && v <= t.width;
+        for (const f of t.relief.landforms) expect(inside(f.x) && inside(f.y)).toBe(true);
+        for (const f of [...pointsOf(t), ...areasOf(t)]) {
+          const at = positionOf(f);
+          expect(inside(at.x) && inside(at.y)).toBe(true);
         }
-        for (const line of t.lines) {
-          for (const p of line.points) expect(inside(p.x) && inside(p.y)).toBe(true);
+        for (const line of linesOf(t)) {
+          for (const p of line.geometry.kind === 'polyline' ? line.geometry.points : []) {
+            expect(inside(p.x) && inside(p.y)).toBe(true);
+          }
         }
       }),
       { numRuns: 200 },
@@ -52,14 +59,16 @@ describe('terrain / generate', () => {
         // close enough to the 5 s timeout to trip over it on a loaded runner. The loop
         // measures every pair the same way and keeps the tightest; the assertion is made
         // once, on that one. A pair that clears the bar by the least clears it for all.
-        const { points } = make(seed, level);
-        let worst: readonly [PointFeature, PointFeature] | null = null;
+        const points = pointsOf(make(seed, level));
+        let worst: readonly [Feature, Feature] | null = null;
         let margin = Infinity;
         for (let i = 0; i < points.length; i++) {
           for (let j = i + 1; j < points.length; j++) {
             const a = points[i]!;
             const b = points[j]!;
-            const gap = Math.hypot(a.x - b.x, a.y - b.y);
+            const at = positionOf(a);
+            const to = positionOf(b);
+            const gap = Math.hypot(at.x - to.x, at.y - to.y);
             // Both bars at once, because either can be the one a pair undercuts.
             const slack = Math.min(gap - separationOf(a, b), gap - MIN_POINT_SEPARATION);
             if (slack < margin) {
@@ -70,7 +79,9 @@ describe('terrain / generate', () => {
         }
         if (!worst) return;
         const [a, b] = worst;
-        const gap = Math.hypot(a.x - b.x, a.y - b.y);
+        const at = positionOf(a);
+        const to = positionOf(b);
+        const gap = Math.hypot(at.x - to.x, at.y - to.y);
         expect(gap, `${a.kind} and ${b.kind}`).toBeGreaterThanOrEqual(separationOf(a, b));
         expect(gap).toBeGreaterThanOrEqual(MIN_POINT_SEPARATION);
       }),
@@ -84,18 +95,14 @@ describe('terrain / generate', () => {
     const kinds = ['boulder', 'knoll', 'pit', 'tree', 'crag'] as const;
     for (const a of kinds) {
       for (const b of kinds) {
-        const gap = separationOf(
-          { kind: a, code: CODE_OF[a], x: 0, y: 0, size: 3 },
-          { kind: b, code: CODE_OF[b], x: 0, y: 0, size: 3 },
-        );
+        const gap = separationOf({ code: CODE_OF[a], size: 3 }, { code: CODE_OF[b], size: 3 });
         expect(gap, `${a} and ${b}`).toBeGreaterThanOrEqual(MIN_POINT_SEPARATION);
       }
     }
   });
 
   it('gets busier with the level', () => {
-    const count = (t: Terrain) =>
-      t.landforms.length + t.points.length + t.lines.length + t.areas.length;
+    const count = (t: GeneratedMap) => t.relief.landforms.length + t.features.length;
     expect(count(make(1, 1))).toBeLessThan(count(make(1, 10)));
   });
 
@@ -107,11 +114,12 @@ describe('terrain / generate', () => {
       fc.property(anySeed, anyLevel, (seed, level) => {
         const t = make(seed, level);
         const onEdge = (v: { x: number; y: number }) =>
-          v.x === 0 || v.y === 0 || v.x === t.size || v.y === t.size;
-        for (const line of t.lines) {
-          if (line.kind === 'stream') continue;
-          expect(onEdge(line.points[0]!)).toBe(true);
-          expect(onEdge(line.points[line.points.length - 1]!)).toBe(true);
+          v.x === 0 || v.y === 0 || v.x === t.width || v.y === t.width;
+        for (const line of linesOf(t)) {
+          if (line.kind === 'stream' || line.geometry.kind !== 'polyline') continue;
+          const { points } = line.geometry;
+          expect(onEdge(points[0]!)).toBe(true);
+          expect(onEdge(points[points.length - 1]!)).toBe(true);
         }
       }),
       { numRuns: 100 },
@@ -124,7 +132,7 @@ describe('terrain / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const t = make(seed, level);
-        const grid = sampleGrid(t, 48);
+        const grid = sampleGrid(t.relief, 48);
         const relief = grid.max - grid.min;
         expect(relief).toBeGreaterThan(15);
         expect(relief).toBeLessThan(90);
@@ -138,9 +146,9 @@ describe('terrain / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const t = make(seed, level);
-        for (const line of t.lines) {
-          if (line.kind !== 'stream') continue;
-          const heights = line.points.map((p) => heightAt(t, p.x, p.y));
+        for (const line of linesOf(t)) {
+          if (line.kind !== 'stream' || line.geometry.kind !== 'polyline') continue;
+          const heights = line.geometry.points.map((p) => t.relief.heightAt(p.x, p.y));
           // Smoothing moves a vertex a little off the traced line, so this is descent
           // over the whole watercourse rather than between every adjacent pair.
           expect(heights[heights.length - 1]!).toBeLessThan(heights[0]!);
@@ -157,18 +165,21 @@ describe('terrain / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const t = make(seed, level);
-        const ground = readGround(t);
+        const ground = readGround(t.relief);
         // The marsh drawn where a stream sinks is the one exception, and it is placed
         // *because* the water stops there rather than because the slope suits it.
-        const sinks = t.lines
-          .filter((l) => l.kind === 'stream')
-          .map((l) => l.points[l.points.length - 1]!);
+        const sinks = linesOf(t)
+          .filter((l) => l.kind === 'stream' && l.geometry.kind === 'polyline')
+          .map((l) => {
+            const points = l.geometry.kind === 'polyline' ? l.geometry.points : [];
+            return points[points.length - 1]!;
+          });
         const isSink = (a: { x: number; y: number }) =>
           sinks.some((e) => Math.hypot(e.x - a.x, e.y - a.y) < 1);
-        for (const area of t.areas) {
-          if (isSink(area)) continue;
-          expect(suitsArea(area.kind, ground, area), `${area.kind} at ${area.x},${area.y}`)
-            .toBe(true);
+        for (const area of areasOf(t)) {
+          const at = positionOf(area);
+          if (isSink(at)) continue;
+          expect(suits(area.code, ground, at), `${area.kind} at ${at.x},${at.y}`).toBe(true);
         }
       }),
       { numRuns: 200 },
@@ -179,10 +190,11 @@ describe('terrain / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const t = make(seed, level);
-        const ground = readGround(t);
-        for (const f of t.points) {
+        const ground = readGround(t.relief);
+        for (const f of pointsOf(t)) {
           if (f.kind !== 'knoll' && f.kind !== 'pit') continue;
-          expect(suitsPoint(f.kind, ground, f), `${f.kind} at ${f.x},${f.y}`).toBe(true);
+          const at = positionOf(f);
+          expect(suits(f.code, ground, at), `${f.kind} at ${at.x},${at.y}`).toBe(true);
         }
       }),
       { numRuns: 100 },
@@ -199,7 +211,7 @@ describe('terrain / height', () => {
   it('a landform contributes nothing beyond its own radius', () => {
     // The property the whole distractor design rests on: a local change stays local.
     const t = make(11);
-    for (const f of t.landforms) {
+    for (const f of t.relief.landforms) {
       const far = f.radius * f.elongation * 1.2;
       expect(Math.abs(contributionOf(f, f.x + far, f.y))).toBe(0);
       expect(Math.abs(contributionOf(f, f.x, f.y + far))).toBe(0);
@@ -208,7 +220,7 @@ describe('terrain / height', () => {
 
   it('a hill peaks at its centre and a depression bottoms out there', () => {
     const t = make(23);
-    for (const f of t.landforms) {
+    for (const f of t.relief.landforms) {
       const centre = contributionOf(f, f.x, f.y);
       const off = contributionOf(f, f.x + f.radius * 0.5, f.y);
       expect(Math.abs(centre)).toBeGreaterThanOrEqual(Math.abs(off));
@@ -217,7 +229,7 @@ describe('terrain / height', () => {
   });
 
   it('sampleGrid reports the range it actually sampled', () => {
-    const grid = sampleGrid(make(5), 24);
+    const grid = sampleGrid(make(5).relief, 24);
     let min = Infinity;
     let max = -Infinity;
     for (const v of grid.values) {
@@ -231,10 +243,10 @@ describe('terrain / height', () => {
   it('the grid agrees with heightAt', () => {
     const t = make(9);
     const n = 16;
-    const grid = sampleGrid(t, n);
-    const step = t.size / n;
+    const grid = sampleGrid(t.relief, n);
+    const step = t.width / n;
     for (const [i, j] of [[0, 0], [5, 7], [n, n], [3, n]] as const) {
-      expect(grid.values[j * (n + 1) + i]).toBeCloseTo(heightAt(t, i * step, j * step), 4);
+      expect(grid.values[j * (n + 1) + i]).toBeCloseTo(t.relief.heightAt(i * step, j * step), 4);
     }
   });
 });
@@ -244,16 +256,19 @@ describe('terrain / perturb', () => {
     fc.assert(
       fc.property(anySeed, fc.integer({ min: 5, max: 60 }), (seed, distance) => {
         const before = make(seed);
-        const { terrain: after, change } = perturb(before, seeded(seed + 1), { distance });
+        const { map: after, change } = perturb(before, seeded(seed + 1), { distance });
 
-        const lists = ['landforms', 'points', 'areas'] as const;
+        const places = (t: GeneratedMap) => [
+          ...t.relief.landforms.map((f) => ({ x: f.x, y: f.y })),
+          ...t.features.map(positionOf),
+        ];
+        const was = places(before);
+        const now = places(after);
         let moved = 0;
-        for (const list of lists) {
-          before[list].forEach((f, i) => {
-            const g = after[list][i]!;
-            if (f.x !== g.x || f.y !== g.y) moved++;
-          });
-        }
+        was.forEach((f, i) => {
+          const g = now[i]!;
+          if (f.x !== g.x || f.y !== g.y) moved++;
+        });
         expect(moved).toBe(1);
         expect(change.distance).toBe(distance);
       }),
@@ -263,19 +278,24 @@ describe('terrain / perturb', () => {
 
   it('leaves everything else identical', () => {
     const before = make(31);
-    const { terrain: after } = perturb(before, seeded(2), { distance: 30 });
-    expect(after.lines).toEqual(before.lines);
-    expect(after.size).toBe(before.size);
-    expect(after.landforms).toHaveLength(before.landforms.length);
-    expect(after.points).toHaveLength(before.points.length);
+    const { map: after } = perturb(before, seeded(2), { distance: 30 });
+    expect(linesOf(after)).toEqual(linesOf(before));
+    expect(after.width).toBe(before.width);
+    expect(after.relief.landforms).toHaveLength(before.relief.landforms.length);
+    expect(pointsOf(after)).toHaveLength(pointsOf(before).length);
   });
 
   it('keeps the moved feature on the map', () => {
     fc.assert(
       fc.property(anySeed, fc.integer({ min: 5, max: 200 }), (seed, distance) => {
-        const t = perturb(make(seed), seeded(seed), { distance }).terrain;
-        for (const f of [...t.landforms, ...t.points, ...t.areas]) {
-          expect(f.x >= 0 && f.x <= t.size && f.y >= 0 && f.y <= t.size).toBe(true);
+        const t = perturb(make(seed), seeded(seed), { distance }).map;
+        const places = [
+          ...t.relief.landforms.map((f) => ({ x: f.x, y: f.y })),
+          ...pointsOf(t).map(positionOf),
+          ...areasOf(t).map(positionOf),
+        ];
+        for (const f of places) {
+          expect(f.x >= 0 && f.x <= t.width && f.y >= 0 && f.y <= t.width).toBe(true);
         }
       }),
       { numRuns: 150 },
@@ -290,7 +310,7 @@ describe('terrain / perturb', () => {
         const base = make(seed);
         const moved = perturb(base, seeded(seed + 7), { distance: 40, target: 'landform' });
         expect(moved.change.what).toBe('landform');
-        expect(maxHeightDifference(base, moved.terrain)).toBeGreaterThan(0.5);
+        expect(maxHeightDifference(base.relief, moved.map.relief)).toBeGreaterThan(0.5);
       }),
       { numRuns: 100 },
     );
@@ -302,9 +322,9 @@ describe('terrain / perturb', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const base = make(seed, level);
-        const moved = perturb(base, seeded(seed + 1), { distance: 30 }).terrain;
-        expect(moved.noiseSeed).toBe(base.noiseSeed);
-        expect(moved.tilt).toEqual(base.tilt);
+        const moved = perturb(base, seeded(seed + 1), { distance: 30 }).map;
+        expect(moved.relief.noiseSeed).toBe(base.relief.noiseSeed);
+        expect(moved.relief.tilt).toEqual(base.relief.tilt);
       }),
       { numRuns: 100 },
     );
@@ -312,25 +332,25 @@ describe('terrain / perturb', () => {
 
   it('a bigger move changes the relief more', () => {
     const base = make(77);
-    const small = perturb(base, seeded(3), { distance: 10, target: 'landform' }).terrain;
-    const large = perturb(base, seeded(3), { distance: 60, target: 'landform' }).terrain;
-    expect(maxHeightDifference(base, large)).toBeGreaterThan(maxHeightDifference(base, small));
+    const small = perturb(base, seeded(3), { distance: 10, target: 'landform' }).map;
+    const large = perturb(base, seeded(3), { distance: 60, target: 'landform' }).map;
+    expect(maxHeightDifference(base.relief, large.relief))
+      .toBeGreaterThan(maxHeightDifference(base.relief, small.relief));
   });
 });
 
 describe('terrain / contours', () => {
-  const grid = sampleGrid(make(13), 64);
+  const grid = sampleGrid(make(13).relief, 64);
 
   it('traces closed rings around a single hill', () => {
-    const lone: Terrain = {
+    const lone = new AnalyticRelief({
       size: 400,
       // No tilt and no micro-relief: this is a test of the tracer's geometry, and it
       // wants a field whose contours are exactly rings.
       tilt: { x: 0, y: 0 },
       noiseSeed: 0,
       landforms: [{ kind: 'hill', x: 200, y: 200, radius: 120, amplitude: 20, rotation: 0, elongation: 1 }],
-      points: [], lines: [], areas: [],
-    };
+    });
     const contours = contoursOf(sampleGrid(lone, 80), { interval: 5, resolution: 80 });
     expect(contours.length).toBeGreaterThan(0);
     for (const c of contours) {
@@ -342,13 +362,12 @@ describe('terrain / contours', () => {
   });
 
   it('nests rings: a higher level lies inside a lower one', () => {
-    const lone: Terrain = {
+    const lone = new AnalyticRelief({
       size: 400,
       tilt: { x: 0, y: 0 },
       noiseSeed: 0,
       landforms: [{ kind: 'hill', x: 200, y: 200, radius: 150, amplitude: 24, rotation: 0, elongation: 1 }],
-      points: [], lines: [], areas: [],
-    };
+    });
     const contours = contoursOf(sampleGrid(lone, 80), { interval: 5, resolution: 80 });
     const meanRadius = (level: number) => {
       const c = contours.find((x) => x.level === level)!;
@@ -399,12 +418,12 @@ describe('terrain / contours', () => {
     // segments in cell order and usually enters a contour in its middle. A pure slope has
     // exactly one contour per level and every one of them is open, so a count of paths is
     // a count of failures.
-    const slope: Terrain = {
+    const slope = new AnalyticRelief({
       size: 300,
       tilt: { x: 0.05, y: 0.02 },
       noiseSeed: 0,
-      landforms: [], points: [], lines: [], areas: [],
-    };
+      landforms: [],
+    });
     const contours = contoursOf(sampleGrid(slope, 64), { interval: 5, resolution: 64 });
     expect(contours.length).toBeGreaterThan(1);
     const perLevel = new Map<number, number>();
@@ -416,7 +435,7 @@ describe('terrain / contours', () => {
   });
 
   it('marks every fifth line as an index contour and no others', () => {
-    const contours = contoursOf(sampleGrid(make(21), 64), { interval: 5, resolution: 64 });
+    const contours = contoursOf(sampleGrid(make(21).relief, 64), { interval: 5, resolution: 64 });
     for (const c of contours) {
       expect(c.index, `level ${c.level}`).toBe(Math.round(c.level / 5) % 5 === 0);
     }
@@ -425,12 +444,11 @@ describe('terrain / contours', () => {
   it('tags a hollow and leaves a knoll alone', () => {
     // Without this the two are the same picture, and the relief drill asks a question its
     // own card cannot answer.
-    const lone = (amplitude: number): Terrain => ({
+    const lone = (amplitude: number) => new AnalyticRelief({
       size: 400,
       tilt: { x: 0, y: 0 },
       noiseSeed: 0,
       landforms: [{ kind: 'hill', x: 200, y: 200, radius: 120, amplitude, rotation: 0, elongation: 1 }],
-      points: [], lines: [], areas: [],
     });
     const options = { interval: 5, resolution: 80 };
     const knoll = contoursOf(sampleGrid(lone(20), 80), options);
@@ -453,10 +471,9 @@ describe('terrain / contours', () => {
   });
 
   it('flat ground has no contours', () => {
-    const flat: Terrain = {
-      size: 200, tilt: { x: 0, y: 0 }, noiseSeed: 0,
-      landforms: [], points: [], lines: [], areas: [],
-    };
+    const flat = new AnalyticRelief({
+      size: 200, tilt: { x: 0, y: 0 }, noiseSeed: 0, landforms: [],
+    });
     expect(contoursOf(sampleGrid(flat, 20), { interval: 5, resolution: 20 })).toEqual([]);
   });
 });

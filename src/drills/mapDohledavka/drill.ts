@@ -1,6 +1,6 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
 import type { Rng } from '@/lib/rng.ts';
-import { generateTerrain, type Terrain, type TerrainParams } from '@/lib/terrain/terrain.ts';
+import { generateTerrain, type GeneratedMap, type TerrainParams } from '@/lib/terrain/terrain.ts';
 import { byKind, sitesOf, type ControlKind, type Site } from './features.ts';
 import Play from './Play.tsx';
 
@@ -24,7 +24,7 @@ export interface Control {
 }
 
 export interface MapCard {
-  readonly terrain: Terrain;
+  readonly map: GeneratedMap;
   readonly controls: readonly Control[];
 }
 
@@ -112,13 +112,13 @@ function terrainFor(level: number, size: number): TerrainParams {
 }
 
 interface Draft {
-  readonly terrain: Terrain;
+  readonly map: GeneratedMap;
   readonly sites: Map<ControlKind, Site[]>;
 }
 
 function draft(rng: Rng, params: TerrainParams, radius: number): Draft {
-  const terrain = generateTerrain(rng, params);
-  return { terrain, sites: byKind(sitesOf(terrain, radius)) };
+  const map = generateTerrain(rng, params);
+  return { map, sites: byKind(sitesOf(map, radius)) };
 }
 
 interface Handout {
@@ -209,8 +209,8 @@ function compose(rng: Rng, a: Draft, b: Draft, count: number, radius: number): M
 
   return {
     cards: [
-      { terrain: a.terrain, controls: first },
-      { terrain: b.terrain, controls: second },
+      { map: a.map, controls: first },
+      { map: b.map, controls: second },
     ],
     shared: handout.shared,
     radius,
@@ -273,7 +273,7 @@ export const mapDohledavka = defineDrill<MapDobbleRound, MapDobbleAnswer>({
     if (a.controls.length !== b.controls.length) {
       problems.push(`cards carry ${a.controls.length} and ${b.controls.length} controls`);
     }
-    if (a.terrain === b.terrain) problems.push('both cards are the same map');
+    if (a.map === b.map) problems.push('both cards are the same map');
 
     round.cards.forEach((card, index) => {
       const kinds = card.controls.map((c) => c.kind);
@@ -284,7 +284,7 @@ export const mapDohledavka = defineDrill<MapDobbleRound, MapDobbleAnswer>({
         problems.push(`card ${index} circles a kind twice`);
       }
 
-      const sites = sitesOf(card.terrain, round.radius);
+      const sites = sitesOf(card.map, round.radius);
       for (const control of card.controls) {
         const site = sites.find(
           (s) => s.kind === control.kind && s.at.x === control.x && s.at.y === control.y,

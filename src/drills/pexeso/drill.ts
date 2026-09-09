@@ -1,7 +1,7 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
 import { deriveSeed, seeded, type Rng } from '@/lib/rng.ts';
-import type { Crop } from '@/lib/terrain/MapView.tsx';
-import { generateTerrain, type Terrain, type TerrainParams, type Vec } from '@/lib/terrain/terrain.ts';
+import { pointsOf, positionOf, type Crop, type OMap, type Vec } from '@/lib/terrain/omap.ts';
+import { generateTerrain, type GeneratedMap, type TerrainParams } from '@/lib/terrain/terrain.ts';
 import Play from './Play.tsx';
 
 /**
@@ -15,7 +15,7 @@ import Play from './Play.tsx';
  * images: an offset crop is a `viewBox`, so a pair costs one terrain and two numbers.
  */
 export interface PexesoCard {
-  /** Index into `terrains`; the two cards sharing one are the pair. */
+  /** Index into `maps`; the two cards sharing one are the pair. */
   readonly pairId: number;
   readonly crop: Crop;
   readonly control: Vec;
@@ -23,7 +23,7 @@ export interface PexesoCard {
 
 export interface PexesoRound {
   readonly pairs: number;
-  readonly terrains: readonly Terrain[];
+  readonly maps: readonly GeneratedMap[];
   /** 2 * pairs cards, shuffled. */
   readonly cards: readonly PexesoCard[];
   /** Distance between a pair's two crop centres, in metres. */
@@ -85,12 +85,13 @@ export function paramsFor(level: number): PexesoParams {
 }
 
 /** Somewhere both crops can reach without leaving the map. */
-function controlFor(rng: Rng, terrain: Terrain, halfSpan: number): Vec {
+function controlFor(rng: Rng, map: GeneratedMap, halfSpan: number): Vec {
   const lo = halfSpan;
-  const hi = terrain.size - halfSpan;
-  const candidates = [...terrain.points, ...terrain.landforms].filter(
-    (f) => f.x >= lo && f.x <= hi && f.y >= lo && f.y <= hi,
-  );
+  const hi = map.width - halfSpan;
+  const candidates = [
+    ...pointsOf(map).map(positionOf),
+    ...map.relief.landforms.map((f) => ({ x: f.x, y: f.y })),
+  ].filter((f) => f.x >= lo && f.x <= hi && f.y >= lo && f.y <= hi);
   // Anchoring on a feature is what makes the control worth finding. A map whose features
   // all sit near the edge still has to produce a pair, so the fallback is the interior.
   return candidates.length > 0
@@ -113,17 +114,17 @@ export const pexeso = defineDrill<PexesoRound, PexesoAnswer>({
     // as long as that is under half a crop — which the fraction cap guarantees.
     const halfSpan = CROP_SIZE / 2 + shift / 2;
 
-    const terrains: Terrain[] = [];
+    const maps: GeneratedMap[] = [];
     const cards: PexesoCard[] = [];
 
     for (let pairId = 0; pairId < params.pairs; pairId++) {
       // Each pair gets its own stream, so a pair's terrain does not depend on how many
       // pairs came before it — the same reason session rounds derive their seeds.
       const local = seeded(deriveSeed(rng.next(), pairId));
-      const terrain = generateTerrain(local, terrainFor(level));
-      terrains.push(terrain);
+      const map = generateTerrain(local, terrainFor(level));
+      maps.push(map);
 
-      const control = controlFor(local, terrain, halfSpan);
+      const control = controlFor(local, map, halfSpan);
       const angle = local.range(0, 2 * Math.PI);
       const dx = (Math.cos(angle) * shift) / 2;
       const dy = (Math.sin(angle) * shift) / 2;
@@ -143,7 +144,7 @@ export const pexeso = defineDrill<PexesoRound, PexesoAnswer>({
 
     return {
       pairs: params.pairs,
-      terrains,
+      maps,
       cards: rng.shuffle(cards),
       shift,
       cropSize: CROP_SIZE,
@@ -165,9 +166,9 @@ export const pexeso = defineDrill<PexesoRound, PexesoAnswer>({
     }
 
     for (const card of round.cards) {
-      const terrain = round.terrains[card.pairId];
-      if (!terrain) {
-        problems.push(`card references missing terrain ${card.pairId}`);
+      const map: OMap | undefined = round.maps[card.pairId];
+      if (!map) {
+        problems.push(`card references missing map ${card.pairId}`);
         continue;
       }
       // The control has to be visible on both cards; it is the only thing they share
@@ -179,7 +180,7 @@ export const pexeso = defineDrill<PexesoRound, PexesoAnswer>({
       ) {
         problems.push(`pair ${card.pairId}: the control is outside a crop`);
       }
-      if (x < 0 || y < 0 || x + size > terrain.size || y + size > terrain.size) {
+      if (x < 0 || y < 0 || x + size > map.width || y + size > map.width) {
         problems.push(`pair ${card.pairId}: a crop runs off the map`);
       }
     }

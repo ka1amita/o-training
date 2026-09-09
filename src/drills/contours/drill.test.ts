@@ -39,7 +39,9 @@ describe('contours / generate', () => {
         const round = gen(seed, level);
         const answer = round.options[round.correctIndex]!;
         const identical = round.options.filter(
-          (o, i) => i !== round.correctIndex && maxHeightDifference(answer, o) < MIN_HEIGHT_DIFFERENCE,
+          (o, i) =>
+            i !== round.correctIndex &&
+            maxHeightDifference(answer.relief, o.relief) < MIN_HEIGHT_DIFFERENCE,
         );
         expect(identical).toHaveLength(0);
       }),
@@ -68,11 +70,7 @@ describe('contours / generate', () => {
     // Boulders and paths say nothing about the shape of the ground, and on a card that is
     // only about the ground they are noise the player has to learn to ignore.
     const round = gen(4, 6);
-    for (const option of round.options) {
-      expect(option.points).toHaveLength(0);
-      expect(option.lines).toHaveLength(0);
-      expect(option.areas).toHaveLength(0);
-    }
+    for (const option of round.options) expect(option.features).toHaveLength(0);
   });
 
   it('moves the landform less as the level rises', () => {
@@ -89,7 +87,7 @@ describe('contours / generate', () => {
       return Math.min(
         ...round.options
           .filter((_, i) => i !== round.correctIndex)
-          .map((o) => maxHeightDifference(answer, o)),
+          .map((o) => maxHeightDifference(answer.relief, o.relief)),
       );
     };
     expect(spread(10)).toBeLessThan(spread(1));
@@ -188,7 +186,7 @@ describe('map memory / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const round = memGen(seed, level);
-        const size = round.options[0]!.size;
+        const size = round.options[0]!.width;
         expect(round.crop.x).toBeGreaterThanOrEqual(0);
         expect(round.crop.y).toBeGreaterThanOrEqual(0);
         expect(round.crop.x + CROP_SIZE).toBeLessThanOrEqual(size);

@@ -25,10 +25,10 @@ export function CardView({
   onTap: (kind: ControlKind) => void;
   className?: string;
 }) {
-  const { size } = card.terrain;
+  const size = card.map.width;
   return (
     <div className={`relative overflow-hidden ${className ?? ''}`}>
-      <MapView terrain={card.terrain} className="block h-full w-full" />
+      <MapView map={card.map} className="block h-full w-full" />
       <svg
         viewBox={`0 0 ${size} ${size}`}
         className="absolute inset-0 block h-full w-full"

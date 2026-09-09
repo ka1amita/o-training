@@ -1,9 +1,11 @@
 import type { Rng } from '@/lib/rng.ts';
-import type { Crop } from '@/lib/terrain/MapView.tsx';
 import { maxHeightDifference } from '@/lib/terrain/height.ts';
 import {
-  perturb, readGround, suitsArea, suitsPoint,
-  type Change, type Ground, type Terrain,
+  areasOf, insideCrop, pointsOf, positionOf, type Crop, type Vec,
+} from '@/lib/terrain/omap.ts';
+import { suits } from '@/lib/terrain/semantics.ts';
+import {
+  perturb, readGround, type Change, type GeneratedMap, type Ground,
 } from '@/lib/terrain/terrain.ts';
 
 /**
@@ -16,7 +18,7 @@ import {
  * and reads as the drill being unfair.
  */
 export interface Siblings {
-  readonly options: readonly Terrain[];
+  readonly options: readonly GeneratedMap[];
   readonly correctIndex: number;
 }
 
@@ -32,13 +34,17 @@ export interface SiblingOptions {
 
 const ATTEMPTS = 24;
 
-function movedFeature(before: Terrain, after: Terrain, change: Change) {
-  const list = change.what === 'landform' ? 'landforms' : change.what === 'point' ? 'points' : 'areas';
-  return { from: before[list][change.index]!, to: after[list][change.index]! };
+function movedFeature(before: GeneratedMap, after: GeneratedMap, change: Change) {
+  const at = (map: GeneratedMap): Vec => {
+    if (change.what === 'landform') {
+      const f = map.relief.landforms[change.index]!;
+      return { x: f.x, y: f.y };
+    }
+    const list = change.what === 'point' ? pointsOf(map) : areasOf(map);
+    return positionOf(list[change.index]!);
+  };
+  return { from: at(before), to: at(after) };
 }
-
-const inside = (p: { x: number; y: number }, crop: Crop) =>
-  p.x >= crop.x && p.x <= crop.x + crop.size && p.y >= crop.y && p.y <= crop.y + crop.size;
 
 /**
  * Whether the moved feature still belongs where it now is.
@@ -52,57 +58,53 @@ const inside = (p: { x: number; y: number }, crop: Crop) =>
  * `distance * 2.5` fallback below, and a distractor that differs by far more than the
  * level asked for is a worse question than a slightly odd marsh.
  */
-export function isPlausibleChange(after: Terrain, change: Change, ground: Ground): boolean {
+export function isPlausibleChange(after: GeneratedMap, change: Change, ground: Ground): boolean {
   if (change.what === 'landform') return true;
-  if (change.what === 'area') {
-    const area = after.areas[change.index]!;
-    return suitsArea(area.kind, ground, area);
-  }
-  const point = after.points[change.index]!;
-  return suitsPoint(point.kind, ground, point);
+  const moved = (change.what === 'area' ? areasOf(after) : pointsOf(after))[change.index]!;
+  return suits(moved.code, ground, positionOf(moved));
 }
 
 /** Whether this perturbation is one the player could notice. */
 export function isVisibleChange(
-  before: Terrain,
-  after: Terrain,
+  before: GeneratedMap,
+  after: GeneratedMap,
   change: Change,
   options: SiblingOptions,
 ): boolean {
   const { from, to } = movedFeature(before, after, change);
-  if (options.crop && !inside(from, options.crop) && !inside(to, options.crop)) return false;
+  if (options.crop && !insideCrop(from, options.crop) && !insideCrop(to, options.crop)) return false;
   if (options.target === 'landform') {
     const floor = options.minHeightDifference ?? 1;
-    if (maxHeightDifference(before, after) < floor) return false;
+    if (maxHeightDifference(before.relief, after.relief) < floor) return false;
   }
   return true;
 }
 
 export function siblings(
   rng: Rng,
-  base: Terrain,
+  base: GeneratedMap,
   count: number,
   options: SiblingOptions,
 ): Siblings {
-  const made: Terrain[] = [];
+  const made: GeneratedMap[] = [];
 
   // Sampled once for the whole round. Perturbing a point or an area leaves the height
   // field alone, so every candidate is judged against the same ground; targeting a
   // landform changes the field, and there plausibility has nothing to say anyway.
-  const ground = options.target === 'landform' ? null : readGround(base);
+  const ground = options.target === 'landform' ? null : readGround(base.relief);
 
   while (made.length < count - 1) {
-    let accepted: Terrain | null = null;
-    let visibleOnly: Terrain | null = null;
+    let accepted: GeneratedMap | null = null;
+    let visibleOnly: GeneratedMap | null = null;
     for (let attempt = 0; attempt < ATTEMPTS && !accepted; attempt++) {
-      const { terrain, change } = perturb(base, rng, {
+      const { map: candidate, change } = perturb(base, rng, {
         distance: options.distance,
         ...(options.target ? { target: options.target } : {}),
         ...(options.crop ? { within: options.crop } : {}),
       });
-      if (!isVisibleChange(base, terrain, change, options)) continue;
-      if (!ground || isPlausibleChange(terrain, change, ground)) accepted = terrain;
-      else visibleOnly ??= terrain;
+      if (!isVisibleChange(base, candidate, change, options)) continue;
+      if (!ground || isPlausibleChange(candidate, change, ground)) accepted = candidate;
+      else visibleOnly ??= candidate;
     }
     accepted ??= visibleOnly;
     // Falling back to a bigger move is better than shipping an unanswerable round: an
@@ -113,7 +115,7 @@ export function siblings(
           distance: options.distance * 2.5,
           ...(options.target ? { target: options.target } : {}),
           ...(options.crop ? { within: options.crop } : {}),
-        }).terrain,
+        }).map,
     );
   }
 
@@ -130,17 +132,19 @@ export function siblings(
  * the finished terrains, so `wellFormed` can check it without being handed the change.
  * Perturbation preserves list order, so the comparison is index by index.
  */
-export function differsWithin(a: Terrain, b: Terrain, crop: Crop): boolean {
-  const lists = ['landforms', 'points', 'areas'] as const;
-  for (const list of lists) {
-    const left = a[list];
-    const right = b[list];
+export function differsWithin(a: GeneratedMap, b: GeneratedMap, crop: Crop): boolean {
+  const lists: readonly (readonly [readonly Vec[], readonly Vec[]])[] = [
+    [a.relief.landforms, b.relief.landforms],
+    [pointsOf(a).map(positionOf), pointsOf(b).map(positionOf)],
+    [areasOf(a).map(positionOf), areasOf(b).map(positionOf)],
+  ];
+  for (const [left, right] of lists) {
     if (left.length !== right.length) return true;
     for (let i = 0; i < left.length; i++) {
       const p = left[i]!;
       const q = right[i]!;
       if (p.x === q.x && p.y === q.y) continue;
-      if (inside(p, crop) || inside(q, crop)) return true;
+      if (insideCrop(p, crop) || insideCrop(q, crop)) return true;
     }
   }
   return false;

@@ -34,7 +34,7 @@ export default function Play({ round, onDone }: PlayProps<ContoursRound, Contour
   return (
     <div className="flex flex-1 flex-col gap-3">
       <div className="mx-auto w-full max-w-[16rem] overflow-hidden rounded-xl border border-line">
-        <MapView terrain={answer} contoursOnly className="block h-full w-full" />
+        <MapView map={answer} contoursOnly className="block h-full w-full" />
       </div>
 
       <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0">
@@ -56,7 +56,7 @@ export default function Play({ round, onDone }: PlayProps<ContoursRound, Contour
                   : 'border-line'
                 }`}
               >
-                <Relief terrain={option} className="block h-full w-full" />
+                <Relief relief={option.relief} className="block h-full w-full" />
                 {state !== 'idle' && <Verdict kind={state} />}
               </button>
             </li>
