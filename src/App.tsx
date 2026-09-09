@@ -5,6 +5,7 @@ import Home from './pages/Home.tsx';
 import DrillPage from './pages/DrillPage.tsx';
 import MatchPage from './pages/MatchPage.tsx';
 import Progress from './pages/Progress.tsx';
+import Settings from './pages/Settings.tsx';
 import { Router } from 'wouter';
 
 /**
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="/match" component={MatchPage} />
             <Route path="/match/join/:code" component={MatchPage} />
             <Route path="/progress" component={Progress} />
+            <Route path="/settings" component={Settings} />
             {DevMaps && (
               <Route path="/dev/maps">
                 <Suspense fallback={<p className="pt-10 text-center text-muted">…</p>}>

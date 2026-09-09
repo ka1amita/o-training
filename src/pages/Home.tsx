@@ -39,6 +39,15 @@ export default function Home() {
           ))}
         </ul>
       )}
+
+      {/* Below the drills on purpose: the default policy is the generated maps this app
+          has always used, so this is a door and never a step on the way in. */}
+      <Link
+        href="/settings"
+        className="rounded-xl border border-dashed border-line px-4 py-3 text-center text-sm text-muted no-underline hover:border-flag hover:text-paper"
+      >
+        Maps &mdash; generated, real, or a mix
+      </Link>
     </div>
   );
 }

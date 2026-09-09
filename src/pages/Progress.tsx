@@ -49,17 +49,25 @@ export default function Progress() {
         })
       )}
 
-      <div className="flex items-center justify-between">
-        <Link href="/" className="text-sm text-muted no-underline">Back</Link>
-        <button
-          type="button"
-          onClick={() => {
-            void clearAll(idb).then(reload);
-          }}
-          className="rounded-lg border border-line bg-transparent px-3 py-2 text-sm text-muted hover:border-bad hover:text-bad"
-        >
-          Erase all progress
-        </button>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <Link href="/" className="text-sm text-muted no-underline">Back</Link>
+          <button
+            type="button"
+            onClick={() => {
+              void clearAll(idb).then(reload);
+            }}
+            className="rounded-lg border border-line bg-transparent px-3 py-2 text-sm text-muted hover:border-bad hover:text-bad"
+          >
+            Erase all progress
+          </button>
+        </div>
+        {/* What it does and does not touch, said before it is pressed. Downloaded maps
+            are a download and not a record; re-fetching them on a phone in a forest is
+            not what "erase my progress" asks for. */}
+        <p className="m-0 text-right text-xs text-muted">
+          Levels, session history and your map choice. Downloaded maps stay.
+        </p>
       </div>
     </div>
   );
