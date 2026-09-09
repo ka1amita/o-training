@@ -188,7 +188,7 @@ instantly without being able to name.
 ## Verify
 
 ```bash
-npm run typecheck && npm test && npm run build
+npm run verify       # typecheck, tests, bundle — the same command CI runs
 npm run preview      # PWA behaviour needs the built bundle, not the dev server
 ```
 

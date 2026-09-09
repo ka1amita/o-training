@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "build:pages": "tsc --noEmit && BASE_PATH=/o-training/ vite build",
-    "deploy": "npm run build:pages && node scripts/deploy-pages.mjs",
+    "deploy": "npm run verify:pages && node scripts/deploy-pages.mjs",
     "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm test && vite build",
+    "verify:pages": "BASE_PATH=/o-training/ npm run verify",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -31,13 +31,10 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run typecheck
-
-      - run: npm test
-
-      # base=/o-training/ — a Pages project site is served from a subpath. The build that
-      # gets verified has to be the build that ships, so this is `build:pages`, not `build`.
-      - run: npm run build:pages
+      # The `npm run verify` a local checkout runs — typecheck, tests, bundle — with the
+      # base a Pages project site needs, since it is served from a subpath. One command,
+      # so the build that gets verified is the build that ships.
+      - run: npm run verify:pages
 
       - uses: actions/upload-artifact@v7
         with:
