@@ -29,6 +29,11 @@ Progress tracks **median response time per session** — the number a 2026 study
 Danish elite squad found falling 27% over six weeks of this kind of work, steeply through
 about session seven and then flattening.
 
+## Design notes
+
+[`docs/real-maps-architecture.md`](docs/real-maps-architecture.md) — how the terrain engine
+would take real maps (Mapper `.xmap`, OCAD, a Livelox image) beside the generated ones.
+
 ## Deploy
 
 Live at <https://www.matejkala.com/o-training/>.
