@@ -127,3 +127,16 @@ export function providerFor(policy: MapPolicy, maps: readonly OMap[]): MapProvid
  */
 export const sourceOf = (map: OMap): 'gen' | 'real' =>
   map.meta || map.id !== 'generated' ? 'real' : 'gen';
+
+/**
+ * One word for the maps a round is on, or nothing when it is on none.
+ *
+ * `mix` exists because a round can honestly be both: pexeso draws a map per pair, and
+ * under a mixed policy two of six pairs can be real. Calling that round `real` because its
+ * first pair was would be a badge that says something the round does not.
+ */
+export function sourceBadge(maps: readonly OMap[]): 'gen' | 'real' | 'mix' | null {
+  if (maps.length === 0) return null;
+  const first = sourceOf(maps[0]!);
+  return maps.every((map) => sourceOf(map) === first) ? first : 'mix';
+}

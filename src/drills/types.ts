@@ -1,6 +1,7 @@
 import type { FC } from 'react';
 import type { RoundContext } from '@/lib/maps/provider.ts';
 import type { Rng } from '@/lib/rng.ts';
+import type { OMap } from '@/lib/terrain/omap.ts';
 import type { StaircaseBounds } from '@/lib/staircase.ts';
 
 export type Engine = 'symbols' | 'terrain';
@@ -69,3 +70,25 @@ export type AnyDrill = Drill<any, any>;
 export function defineDrill<Round, Answer>(d: Drill<Round, Answer>): Drill<Round, Answer> {
   return d;
 }
+
+/**
+ * The ground a round is on, read off the round itself.
+ *
+ * A terrain round holds its map either as `base` — one map and its variants, which is the
+ * contours drill and map memory — or as `maps`, one per pair, which is pexeso. That is a
+ * convention rather than a field of `Drill`, and this is where it is written down, because
+ * the session runner needs it to say which source a round came from and a drill should not
+ * have to gain a method to be asked.
+ *
+ * Read from the **round**, never from what was drawn. Which is the one rule, applied to a
+ * badge rather than to an answer, and for the same reason: the round is the truth.
+ */
+export function mapsOfRound(round: unknown): readonly OMap[] {
+  if (typeof round !== 'object' || round === null) return [];
+  const held = round as { base?: unknown; maps?: unknown };
+  if (Array.isArray(held.maps)) return held.maps.filter(isMap);
+  return isMap(held.base) ? [held.base] : [];
+}
+
+const isMap = (value: unknown): value is OMap =>
+  typeof value === 'object' && value !== null && 'relief' in value && 'features' in value;

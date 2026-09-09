@@ -1,6 +1,7 @@
 import { deriveSeed } from './rng.ts';
 import { advance, initial, type StaircaseBounds, type StaircaseState } from './staircase.ts';
 import type { Score } from '@/drills/types.ts';
+import type { PolicySource } from '@/lib/maps/policy.ts';
 
 /**
  * A session as a pure reducer. Every event carries its own timestamp, so nothing in here
@@ -17,6 +18,16 @@ export interface RoundRecord {
 export interface SessionState {
   readonly drillId: string;
   readonly seed: number;
+  /**
+   * Which map source this session ran on.
+   *
+   * Carried through the session so the summary can record it: a level reached on real maps
+   * and one reached on generated maps are not the same level — real ground is busier and
+   * more varied, so "distance 18 m" is not one difficulty (the design note's risk 2). The
+   * chart is still one curve; this is what will let it be split without asking players to
+   * re-train first.
+   */
+  readonly policySource: PolicySource;
   readonly index: number;
   readonly total: number;
   readonly staircase: StaircaseState;
@@ -41,12 +52,16 @@ export interface SessionInit {
   readonly bounds: StaircaseBounds;
   readonly level: number;
   readonly at: number;
+  /** Optional, and defaults to `generated`: a caller that does not say is one that has no
+   *  policy to say it with, which is what every caller was before there were policies. */
+  readonly policySource?: PolicySource;
 }
 
 export function start(init: SessionInit): SessionState {
   return {
     drillId: init.drillId,
     seed: init.seed,
+    policySource: init.policySource ?? 'generated',
     index: 0,
     total: init.total,
     staircase: initial(init.bounds, init.level),
@@ -120,6 +135,13 @@ export interface SessionSummary {
   readonly medianResponseMs: number;
   readonly endLevel: number;
   readonly bestStreak: number;
+  /**
+   * Which source the rounds came from. **Optional**, and it stays optional: every summary
+   * already on a device was written by a build that did not record one, and inventing
+   * `generated` for those would be a stored record claiming something it never said.
+   * Absent means "not recorded", which a chart that splits by source has to handle anyway.
+   */
+  readonly policySource?: PolicySource;
 }
 
 /**
@@ -147,5 +169,6 @@ export function summarise(state: SessionState): SessionSummary | null {
     medianResponseMs: median(state.records.map((r) => r.responseMs)),
     endLevel: state.staircase.level,
     bestStreak: state.bestStreak,
+    policySource: state.policySource,
   };
 }

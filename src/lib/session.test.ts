@@ -104,6 +104,28 @@ describe('session', () => {
     expect(sum).toMatchObject({ rounds: 2, correct: 1, total: 2, accuracy: 0.5, endLevel: 4 });
     expect(sum.medianResponseMs).toBe(300); // median of 400 and 200
   });
+
+  it('records which source the rounds ran on', () => {
+    // A level reached on real maps is not the level reached on generated ones: real ground
+    // is busier and more varied, so the same requested distance is not the same difficulty.
+    // The chart is still one curve; this is what will let it be split later without asking
+    // players to re-train first.
+    let s = start({
+      drillId: 'test', seed: 42, total: 1, bounds: B, level: 5, at: 1000, policySource: 'mixed',
+    });
+    s = answer(s, ok, 1300);
+    expect(summarise(s)!.policySource).toBe('mixed');
+  });
+
+  it('defaults the source to generated when a caller does not say', () => {
+    // Which every caller was before there were policies, and which the summaries already
+    // on a device were written by — those carry no source at all, and `SessionSummary`
+    // keeps the field optional so that stays readable rather than being invented.
+    let s = fresh(1);
+    expect(s.policySource).toBe('generated');
+    s = answer(s, ok, 1300);
+    expect(summarise(s)!.policySource).toBe('generated');
+  });
 });
 
 describe('median', () => {

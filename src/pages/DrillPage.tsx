@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { Link, useParams } from 'wouter';
 import { drillById } from '@/drills/index.ts';
-import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
+import { bundleUrl, loadLibrary } from '@/lib/maps/library.ts';
+import {
+  bundlesFor, loadPolicy, providerFor, sourceBadge, type MapPolicy,
+} from '@/lib/maps/policy.ts';
+import type { RoundContext } from '@/lib/maps/provider.ts';
 import { seeded } from '@/lib/rng.ts';
 import {
   currentSeed, reduce, start, summarise,
   type SessionEvent, type SessionState,
 } from '@/lib/session.ts';
 import { idb, loadProgress, saveSession } from '@/lib/store.ts';
-import type { AnyDrill } from '@/drills/types.ts';
+import { mapsOfRound, type AnyDrill } from '@/drills/types.ts';
+import type { OMap } from '@/lib/terrain/omap.ts';
 
 export default function DrillPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,20 +27,56 @@ export default function DrillPage() {
  * any particular drill: it asks for a round, hands it to `Play`, scores what comes back
  * and moves the staircase. A new drill needs no change here.
  */
-function Session({ drill }: { drill: AnyDrill }) {
-  const [startLevel, setStartLevel] = useState<number | null>(null);
-
-  useEffect(() => {
-    void loadProgress(idb, drill.id).then((p) =>
-      setStartLevel(p.level > 0 ? p.level : drill.bounds.min),
-    );
-  }, [drill]);
-
-  if (startLevel === null) return <p className="pt-10 text-center text-muted">…</p>;
-  return <RunningSession drill={drill} startLevel={startLevel} />;
+interface Ready {
+  readonly startLevel: number;
+  readonly policy: MapPolicy;
+  readonly maps: readonly OMap[];
 }
 
-function RunningSession({ drill, startLevel }: { drill: AnyDrill; startLevel: number }) {
+/**
+ * Wait for everything the first round is a function of, then start.
+ *
+ * The level was always waited for; the policy and its bundles join it, for a sharper
+ * reason. A round is a function of `(seed, level, provider.id)`, so a session that began
+ * on the generator and swapped provider when a download finished would be two sessions
+ * wearing one progress record, and its first rounds would not be reproducible from
+ * anything stored.
+ *
+ * A bundle that fails to load is simply absent — `loadLibrary` is deliberately quiet about
+ * it — and `providerFor` then names what is actually there. The default policy fetches
+ * nothing at all, so the app that never opens the settings screen still opens a drill
+ * without touching the network.
+ */
+function Session({ drill }: { drill: AnyDrill }) {
+  const [ready, setReady] = useState<Ready | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const [progress, policy] = await Promise.all([
+        loadProgress(idb, drill.id),
+        loadPolicy(idb),
+      ]);
+      const names = bundlesFor(policy);
+      const maps = names.length === 0 ? [] : await loadLibrary(names.map(bundleUrl), fetch, idb);
+      if (!live) return;
+      setReady({
+        startLevel: progress.level > 0 ? progress.level : drill.bounds.min,
+        policy,
+        maps,
+      });
+    })();
+    return () => {
+      live = false;
+    };
+  }, [drill]);
+
+  if (!ready) return <p className="pt-10 text-center text-muted">…</p>;
+  return <RunningSession drill={drill} ready={ready} />;
+}
+
+function RunningSession({ drill, ready }: { drill: AnyDrill; ready: Ready }) {
+  const { startLevel, policy, maps } = ready;
   const [state, dispatch] = useReducer(
     (s: SessionState, e: SessionEvent) => reduce(s, e, drill.bounds),
     undefined,
@@ -49,16 +90,18 @@ function RunningSession({ drill, startLevel }: { drill: AnyDrill; startLevel: nu
         bounds: drill.bounds,
         level: startLevel,
         at: Date.now(),
+        policySource: policy.source,
       }),
   );
 
   const level = state.staircase.level;
   const seed = currentSeed(state);
 
-  // The only provider there is for now. It is built here rather than inside a drill
-  // because which source a round runs on is a decision about the session, not the drill:
-  // a policy stored with progress will choose it (see docs/real-maps-architecture.md).
-  const ctx = useMemo<RoundContext>(() => ({ maps: new GeneratedProvider() }), []);
+  // Built here rather than inside a drill because which source a round runs on is a
+  // decision about the session, not the drill — and built once, because its id is half of
+  // what a round is: rebuilding it mid-session would silently re-generate the round the
+  // player is looking at.
+  const ctx = useMemo<RoundContext>(() => ({ maps: providerFor(policy, maps) }), [policy, maps]);
 
   // Regenerated only when the round actually changes; `Play` may re-render freely
   // without the item shifting under the player.
@@ -74,6 +117,8 @@ function RunningSession({ drill, startLevel }: { drill: AnyDrill; startLevel: nu
     }
     return generated;
   }, [drill, seed, level, ctx]);
+
+  const badge = useMemo(() => sourceBadge(mapsOfRound(round)), [round]);
 
   const onDone = useCallback(
     (answers: unknown[]) => {
@@ -132,6 +177,10 @@ function RunningSession({ drill, startLevel }: { drill: AnyDrill; startLevel: nu
           />
         </span>
         <span>lvl {level}</span>
+        {/* Which ground this round is on, read off the round's own map — the same rule as
+            an answer: never from what was drawn. Absent for the symbol drills, which hold
+            no map to read. */}
+        {badge && <span title="where this round's map came from">{badge}</span>}
         {state.streak >= 2 && <span className="text-flag">×{state.streak}</span>}
       </div>
       {/* Keyed by round: Play holds per-round state (what is matched, whether it has

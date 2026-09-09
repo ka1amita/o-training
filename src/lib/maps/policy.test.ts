@@ -4,10 +4,15 @@ import { seeded, hashJson } from '@/lib/rng.ts';
 import { NoRelief } from '@/lib/terrain/relief.ts';
 import type { OMap } from '@/lib/terrain/omap.ts';
 import {
-  bundlesFor, DEFAULT_POLICY, loadPolicy, parsePolicy, providerFor, savePolicy, sourceOf,
-  type MapPolicy,
+  bundlesFor, DEFAULT_POLICY, loadPolicy, parsePolicy, providerFor, savePolicy, sourceBadge,
+  sourceOf, type MapPolicy,
 } from './policy.ts';
 import { GeneratedProvider, type WindowRequirement } from './provider.ts';
+import { mapsOfRound } from '@/drills/types.ts';
+import { contours } from '@/drills/contours/drill.ts';
+import { mapMemory } from '@/drills/mapMemory/drill.ts';
+import { pexeso } from '@/drills/pexeso/drill.ts';
+import { dohledavka } from '@/drills/dohledavka/drill.ts';
 
 const requirement: WindowRequirement = { size: 300, needsRelief: false };
 
@@ -95,6 +100,35 @@ describe('providerFor', () => {
   it('clamps a share that arrived out of range', () => {
     expect(providerFor({ source: 'mixed', realShare: 9, library: [] }, [imported]).id)
       .toBe('mixed:0*generated+1*library:abc123');
+  });
+});
+
+describe('the badge a round wears', () => {
+  const ctx = { maps: new GeneratedProvider() };
+
+  it('finds the ground under every terrain drill', () => {
+    // `mapsOfRound` reads a convention rather than a field — `base` for the two
+    // four-option drills, `maps` for pexeso — so the thing that could break it silently is
+    // a drill renaming what it holds. This is the test that would notice.
+    for (const drill of [contours, mapMemory, pexeso]) {
+      const round = drill.generate(seeded(3), 5, ctx);
+      expect(mapsOfRound(round).length, drill.id).toBeGreaterThan(0);
+      expect(sourceBadge(mapsOfRound(round)), drill.id).toBe('gen');
+    }
+  });
+
+  it('says nothing for a drill that holds no map', () => {
+    expect(mapsOfRound(dohledavka.generate(seeded(3), 5, ctx))).toEqual([]);
+    expect(sourceBadge([])).toBeNull();
+  });
+
+  it('says mix when a round is genuinely on both', () => {
+    // Pexeso draws a map per pair, so under a mixed policy two of six pairs can be real.
+    // Calling that round `real` because its first pair was would be a badge saying
+    // something the round does not.
+    const generated = new GeneratedProvider().pick(seeded(2), requirement).map;
+    expect(sourceBadge([generated, imported])).toBe('mix');
+    expect(sourceBadge([imported, imported])).toBe('real');
   });
 });
 
