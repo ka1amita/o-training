@@ -103,6 +103,17 @@ export default function Settings() {
         </label>
       )}
 
+      {/* A policy `providerFor` will resolve to the plain generator, said before the
+          player finds out by playing. Real maps with nothing ticked is a legal record and
+          a legal provider — the generator is what catches a source that cannot answer —
+          but a screen showing "Real maps" over an empty list is the screen claiming
+          rounds the device cannot make, which is the badge lying in another place. */}
+      {policy.source !== 'generated' && policy.library.length === 0 && (
+        <p className="m-0 rounded-xl border border-dashed border-line px-4 py-3 text-sm text-muted">
+          No maps are turned on, so rounds will be generated. Tick one below.
+        </p>
+      )}
+
       <section className="flex flex-col gap-2">
         <h3 className="m-0 text-sm font-semibold">Available maps</h3>
         <p className="m-0 text-sm text-muted">

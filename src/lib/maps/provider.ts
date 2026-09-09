@@ -130,11 +130,17 @@ export class LibraryProvider implements MapProvider {
   readonly bundles: readonly OMap[];
 
   constructor(bundles: readonly OMap[]) {
-    this.bundles = bundles;
-    // The id is part of what a round is a function of, so it names the bundles rather than
-    // the library: two devices with different maps must not think they agree. Sorted, so
-    // the same set in a different order is the same library.
-    this.id = `library:${[...bundles].map((b) => b.id).sort().join(',')}`;
+    // **Held in the order the id names them, not the order they arrived in.** The id sorts
+    // by content hash so that the same maps in a different order are one library — and
+    // `pick` walks `bundles`, so if that order were the arrival order the id would be a
+    // claim the provider does not keep: two devices holding the same two maps, enabled in
+    // the settings screen in the opposite order or fetched in the opposite order, would
+    // publish the same id and then draw different maps from the same seed. Measured before
+    // this line existed: forty seeds, forty different rounds, one id. A round is a function
+    // of `(seed, level, provider.id)` or it is not, and that is what P2P agreement and
+    // every golden rest on.
+    this.bundles = [...bundles].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    this.id = `library:${this.bundles.map((b) => b.id).join(',')}`;
   }
 
   pick(rng: Rng, requirement: WindowRequirement): { map: OMap; crop: Crop } | null {

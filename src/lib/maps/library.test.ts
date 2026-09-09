@@ -102,6 +102,25 @@ describe('LibraryProvider', () => {
     expect(new LibraryProvider([]).id).toBe('library:');
   });
 
+  it('draws the same rounds from the same id, whatever order the maps arrived in', () => {
+    // The id sorts by content hash so that the same maps in a different order are one
+    // library. `pick` walks the bundles, so it has to walk them in *that* order — and it
+    // did not: two devices with the same two maps, ticked in the settings screen in the
+    // opposite order or fetched in the opposite order, published one id and then drew
+    // different maps from the same seed. Forty seeds, forty different rounds, one id.
+    // A round is a function of `(seed, level, provider.id)` or P2P agreement is a guess.
+    const a = loadBundle({ ...bundleJson, id: 'aaa' });
+    const b = loadBundle({ ...bundleJson, id: 'bbb' });
+    const one = new LibraryProvider([a, b]);
+    const two = new LibraryProvider([b, a]);
+    expect(one.id).toBe(two.id);
+    const requirement = libraryRequirements()[0]!;
+    for (let seed = 0; seed < 40; seed++) {
+      expect(two.pick(seeded(seed), requirement), `seed ${seed}`)
+        .toEqual(one.pick(seeded(seed), requirement));
+    }
+  });
+
   it('declines rather than offering the wrong ground', () => {
     // The whole difference from the generator, which never declines: a real map is
     // selected from, and a provider that always says yes hands the contours drill a flat

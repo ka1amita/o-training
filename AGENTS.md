@@ -242,6 +242,13 @@ instantly without being able to name.
   are cartography — smoothed, cut at a knoll, thickened every fifth line. Retracing them
   from a height field reconstructed out of those same lines is how a surveyed map comes to
   look generated.
+- **A `LibraryProvider` holds its bundles in the order its id names them.** The id sorts by
+  content hash so the same maps in a different order are one library; `pick` walks the
+  array, so the array has to be sorted too. It was not, and two devices holding the same
+  two maps — ticked in the settings screen in the opposite order, or fetched in the
+  opposite order — published one id and drew different maps from the same seed, forty
+  seeds out of forty. Wherever an id is a promise about behaviour, the thing the id sorts
+  is the thing the behaviour must read.
 - **`LibraryProvider.pick` is pure and it declines.** The bundles are fixed and their
   window lists were written in a deterministic order; loading is `loadLibrary`, outside. It
   returns null when no bundle satisfies a requirement, which is the whole difference from
