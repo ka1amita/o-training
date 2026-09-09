@@ -36,6 +36,15 @@ export function libraryRequirements(): WindowRequirement[] {
 }
 
 /**
+ * The bundles that ship in `public/maps/`.
+ *
+ * A list rather than a directory scan, because `public/` is copied verbatim and there is
+ * nothing at runtime to ask what is in it. Step 6's `MapPolicy` chooses among these; until
+ * then only `#/dev/maps` reads it.
+ */
+export const BUNDLED_MAPS: readonly string[] = ['forest-sample.json'];
+
+/**
  * Bundles kept beside progress, under their own prefix.
  *
  * `drill:` is progress and `map:` is a decoded map, and `clearAll` still deletes only the
