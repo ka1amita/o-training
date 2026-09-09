@@ -1,10 +1,9 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
 import { siblings } from '@/drills/shared/siblings.ts';
 import type { Rng } from '@/lib/rng.ts';
-import { maxHeightDifference } from '@/lib/terrain/height.ts';
-import {
-  generateTerrain, paramsFor as terrainParams, type GeneratedMap,
-} from '@/lib/terrain/terrain.ts';
+import { difference, type Variant } from '@/lib/terrain/edits.ts';
+import { wholeMap, type OMap } from '@/lib/terrain/omap.ts';
+import { generateTerrain, paramsFor as terrainParams } from '@/lib/terrain/terrain.ts';
 import Play from './Play.tsx';
 
 /**
@@ -14,12 +13,14 @@ import Play from './Play.tsx';
  * This is the reading an orienteer does continuously and can practise nowhere else
  * indoors — brown lines into three dimensions.
  *
- * The distractors are the same terrain with **one landform moved**, and it has to be a
- * landform: a boulder somewhere else changes the map and not the relief, so any other
- * target would produce a distractor identical to the answer.
+ * The distractors are the same ground **warped**, and it has to be the ground: a boulder
+ * somewhere else changes the map and not the relief, so any other edit would produce a
+ * distractor identical to the answer.
  */
 export interface ContoursRound {
-  readonly options: readonly GeneratedMap[];
+  readonly base: OMap;
+  /** The answer is the variant with no edits; the rest each carry one warp. */
+  readonly variants: readonly Variant[];
   readonly correctIndex: number;
 }
 
@@ -59,29 +60,31 @@ export const contours = defineDrill<ContoursRound, ContoursAnswer>({
     });
     return siblings(rng, base, OPTIONS, {
       distance: distanceFor(level),
-      target: 'landform',
-      minHeightDifference: MIN_HEIGHT_DIFFERENCE,
+      ops: ['warp'],
+      minReliefDelta: MIN_HEIGHT_DIFFERENCE,
     });
   },
 
   wellFormed(round: ContoursRound): string[] {
     const problems: string[] = [];
-    if (round.options.length !== OPTIONS) {
-      problems.push(`${round.options.length} options, expected ${OPTIONS}`);
+    if (round.variants.length !== OPTIONS) {
+      problems.push(`${round.variants.length} options, expected ${OPTIONS}`);
     }
-    const answer = round.options[round.correctIndex];
-    if (!answer) {
+    if (!round.variants[round.correctIndex]) {
       problems.push(`correctIndex ${round.correctIndex} is not an option`);
       return problems;
     }
 
-    round.options.forEach((option, index) => {
+    // The whole map is the window: this drill shows all of it.
+    const window_ = wholeMap(round.base);
+    round.variants.forEach((variant, index) => {
       if (index === round.correctIndex) return;
       // The invariant that makes the round answerable: every other relief has to be
-      // visibly different ground, or the card describes two of them equally well.
-      const difference = maxHeightDifference(answer.relief, option.relief);
-      if (difference < MIN_HEIGHT_DIFFERENCE) {
-        problems.push(`option ${index} differs from the answer by only ${difference.toFixed(2)} m`);
+      // visibly different ground, or the card describes two of them equally well. Read
+      // off the edits, never off the shading they would produce.
+      const delta = difference(variant, window_).reliefDelta;
+      if (delta < MIN_HEIGHT_DIFFERENCE) {
+        problems.push(`option ${index} differs from the answer by only ${delta.toFixed(2)} m`);
       }
     });
 

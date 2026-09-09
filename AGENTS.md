@@ -73,8 +73,9 @@ stale state and the round could not finish.
 
 **Terrain**
 
-- **Features, not noise.** That is what makes `perturb` an operation — reseeding noise gives
-  a different map, not a sibling. Landform falloff has compact support for the same reason.
+- **Features, not noise.** That is what makes an `Edit` an operation — reseeding noise
+  gives a different map, not a sibling. Landform falloff has compact support for the same
+  reason, and a `warp` inherits it.
 - Feature sizes are **metres, not fractions of the map**: a marsh drawn for a 420 m map
   swamped a 110 m pexeso crop. `areaOutline` wanders a third outside `rx`/`ry`, and the
   radius band was cut to pay for it.
@@ -87,8 +88,16 @@ stale state and the round could not finish.
   into one black mass. `MIN_POINT_SEPARATION` is the advertised floor and is tested
   against every pair of kinds.
 - `MapView` culls to the window — 381 elements to 228 on a 12-card board.
-- Perturb for contours must target a **landform** (a boulder has no relief); for map memory
-  it must land **inside the window** (or two candidates are identical).
+- The contours drill edits with a **warp** (a boulder has no relief); map memory's edit
+  must land **inside the window**, or two candidates are identical.
+- **A distractor is `base + edits`.** `wellFormed` reads the edits and the window, never
+  the map they make — `difference()` is where "how different" is answered, and its
+  `visible` is a **position** test on what moved, not `footprint > 0`. A warp whose disc
+  clips the window but whose landform sits outside it does not count, exactly as it did
+  not when this was `differsWithin`; loosening it changes which distractor a round takes.
+- **A warp does not carry the features standing on it** unless asked (`Warp.carries`).
+  It should, and a real map's will — but the generator's landform perturbation has always
+  moved the bump and left the symbols, and turning it on rewrites every map-memory round.
 
 **Terrain reads the ground**
 
@@ -107,7 +116,7 @@ stale state and the round could not finish.
 the height field runs over hilltops; a marsh on a slope is wrongness an orienteer sees
 instantly without being able to name.
 
-- **`tilt` and `noiseSeed` survive `perturb` untouched.** Otherwise siblings differ
+- **`tilt` and `noiseSeed` survive a warp untouched.** Otherwise siblings differ
   everywhere and compact support stops meaning anything. `noiseSeed` 0 means *no*
   micro-relief and exists for the tracer's own geometry tests; generation sets the low bit
   so it cannot land there.
@@ -156,12 +165,14 @@ instantly without being able to name.
 - Form lines are **short**. Gentle ground is everywhere on a tilted map, so a slope test
   alone drew one down the whole card between every pair of contours — which says the
   interval should have been 2.5 m, not that there is a feature here.
-- Areas are drawn **one path per kind**, not one per feature. Vegetation is generated as
+- Areas are drawn **one path per code**, not one per feature. Vegetation is generated as
   overlapping lobes so a green reads as one region, and separate translucent shapes
   composite their overlaps twice — every chain showed its construction as a string of
-  darker lenses.
-- `areaOutline` hashes **shape fields only**. Hashing position makes `perturb` reshape the
+  darker lenses. Keyed by code and not by kind, for the same reason `MapView` styles by
+  code: an imported 406 and a generated `slow` are one symbol and have to composite as one.
+- `areaOutline` hashes **shape fields only**. Hashing position makes a `move` reshape the
   area it moves, so a map-memory distractor differs by more than its level asked for.
+  A generated area therefore keeps its `shape` beside the outline traced from it.
 - Pattern ids come from `useId()`; a pexeso board mounts twelve `MapView`s in one document.
 - **No north lines.** Drawn at fixed world positions, a pexeso pair's two crops would show
   them at a known offset — an answer coming from something other than the ground.

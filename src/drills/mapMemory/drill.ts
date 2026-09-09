@@ -1,10 +1,9 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
-import { differsWithin, siblings } from '@/drills/shared/siblings.ts';
+import { siblings } from '@/drills/shared/siblings.ts';
 import type { Rng } from '@/lib/rng.ts';
-import type { Crop } from '@/lib/terrain/omap.ts';
-import {
-  generateTerrain, type GeneratedMap, type TerrainParams,
-} from '@/lib/terrain/terrain.ts';
+import { difference, type Variant } from '@/lib/terrain/edits.ts';
+import type { Crop, OMap } from '@/lib/terrain/omap.ts';
+import { generateTerrain, type TerrainParams } from '@/lib/terrain/terrain.ts';
 import Play from './Play.tsx';
 
 /**
@@ -15,12 +14,14 @@ import Play from './Play.tsx';
  * than the gist of it — which is the difference between remembering a leg and remembering
  * that there was a leg.
  *
- * Any feature may move, unlike the contour drill, because everything on an ISOM map is
- * visible. What must hold is that the move happened **inside the window**: a boulder
- * shifted off-screen leaves two identical cards and a round with two right answers.
+ * Anything may change, unlike the contour drill, because everything on an ISOM map is
+ * visible: a feature moves, or the ground under it warps. What must hold is that the
+ * change happened **inside the window** — a boulder shifted off-screen leaves two
+ * identical cards and a round with two right answers.
  */
 export interface MapMemoryRound {
-  readonly options: readonly GeneratedMap[];
+  readonly base: OMap;
+  readonly variants: readonly Variant[];
   readonly correctIndex: number;
   /** The same window for the target and every candidate. */
   readonly crop: Crop;
@@ -87,7 +88,9 @@ export const mapMemory = defineDrill<MapMemoryRound, MapMemoryAnswer>({
     };
 
     return {
-      ...siblings(rng, base, OPTIONS, { distance: params.distance, crop }),
+      // A landform is warped and everything else is moved: between them they are the
+      // "one feature nudged" this drill has always asked for.
+      ...siblings(rng, base, OPTIONS, { distance: params.distance, ops: ['warp', 'move'], crop }),
       crop,
       exposureMs: params.exposureMs,
     };
@@ -95,24 +98,23 @@ export const mapMemory = defineDrill<MapMemoryRound, MapMemoryAnswer>({
 
   wellFormed(round: MapMemoryRound): string[] {
     const problems: string[] = [];
-    if (round.options.length !== OPTIONS) {
-      problems.push(`${round.options.length} options, expected ${OPTIONS}`);
+    if (round.variants.length !== OPTIONS) {
+      problems.push(`${round.variants.length} options, expected ${OPTIONS}`);
     }
-    const answer = round.options[round.correctIndex];
-    if (!answer) {
+    if (!round.variants[round.correctIndex]) {
       problems.push(`correctIndex ${round.correctIndex} is not an option`);
       return problems;
     }
 
-    round.options.forEach((option, index) => {
+    round.variants.forEach((variant, index) => {
       if (index === round.correctIndex) return;
-      if (!differsWithin(answer, option, round.crop)) {
+      if (!difference(variant, round.crop).visible) {
         problems.push(`option ${index} is identical to the answer inside the window`);
       }
     });
 
     const { x, y, size } = round.crop;
-    if (x < 0 || y < 0 || x + size > answer.width || y + size > answer.width) {
+    if (x < 0 || y < 0 || x + size > round.base.width || y + size > round.base.width) {
       problems.push('the window runs off the map');
     }
     if (round.exposureMs <= 0) problems.push('exposureMs must be positive');

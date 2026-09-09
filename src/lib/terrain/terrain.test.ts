@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import {
-  generateTerrain, paramsFor, perturb, readGround, separationOf, MIN_POINT_SEPARATION,
+  generateTerrain, paramsFor, readGround, separationOf, MIN_POINT_SEPARATION,
   type GeneratedMap,
 } from './terrain.ts';
 import { suits } from './semantics.ts';
-import { contributionOf, maxHeightDifference, sampleGrid } from './height.ts';
+import { contributionOf, sampleGrid } from './height.ts';
 import { areasOf, linesOf, pointsOf, positionOf, type Feature } from './omap.ts';
 import { AnalyticRelief } from './relief.ts';
 import { goldenMap } from './golden.ts';
@@ -248,94 +248,6 @@ describe('terrain / height', () => {
     for (const [i, j] of [[0, 0], [5, 7], [n, n], [3, n]] as const) {
       expect(grid.values[j * (n + 1) + i]).toBeCloseTo(t.relief.heightAt(i * step, j * step), 4);
     }
-  });
-});
-
-describe('terrain / perturb', () => {
-  it('moves exactly one feature, by the distance asked for', () => {
-    fc.assert(
-      fc.property(anySeed, fc.integer({ min: 5, max: 60 }), (seed, distance) => {
-        const before = make(seed);
-        const { map: after, change } = perturb(before, seeded(seed + 1), { distance });
-
-        const places = (t: GeneratedMap) => [
-          ...t.relief.landforms.map((f) => ({ x: f.x, y: f.y })),
-          ...t.features.map(positionOf),
-        ];
-        const was = places(before);
-        const now = places(after);
-        let moved = 0;
-        was.forEach((f, i) => {
-          const g = now[i]!;
-          if (f.x !== g.x || f.y !== g.y) moved++;
-        });
-        expect(moved).toBe(1);
-        expect(change.distance).toBe(distance);
-      }),
-      { numRuns: 200 },
-    );
-  });
-
-  it('leaves everything else identical', () => {
-    const before = make(31);
-    const { map: after } = perturb(before, seeded(2), { distance: 30 });
-    expect(linesOf(after)).toEqual(linesOf(before));
-    expect(after.width).toBe(before.width);
-    expect(after.relief.landforms).toHaveLength(before.relief.landforms.length);
-    expect(pointsOf(after)).toHaveLength(pointsOf(before).length);
-  });
-
-  it('keeps the moved feature on the map', () => {
-    fc.assert(
-      fc.property(anySeed, fc.integer({ min: 5, max: 200 }), (seed, distance) => {
-        const t = perturb(make(seed), seeded(seed), { distance }).map;
-        const places = [
-          ...t.relief.landforms.map((f) => ({ x: f.x, y: f.y })),
-          ...pointsOf(t).map(positionOf),
-          ...areasOf(t).map(positionOf),
-        ];
-        for (const f of places) {
-          expect(f.x >= 0 && f.x <= t.width && f.y >= 0 && f.y <= t.width).toBe(true);
-        }
-      }),
-      { numRuns: 150 },
-    );
-  });
-
-  it('targeting a landform is what changes the relief', () => {
-    // Moving a boulder leaves the contours identical, which would make a contour
-    // distractor indistinguishable from the answer. This is why the option exists.
-    fc.assert(
-      fc.property(anySeed, (seed) => {
-        const base = make(seed);
-        const moved = perturb(base, seeded(seed + 7), { distance: 40, target: 'landform' });
-        expect(moved.change.what).toBe('landform');
-        expect(maxHeightDifference(base.relief, moved.map.relief)).toBeGreaterThan(0.5);
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it('carries the tilt and the micro-relief seed through unchanged', () => {
-    // Siblings must share both, or they differ everywhere and compact support — the whole
-    // reason a landform's falloff is bounded — stops meaning anything.
-    fc.assert(
-      fc.property(anySeed, anyLevel, (seed, level) => {
-        const base = make(seed, level);
-        const moved = perturb(base, seeded(seed + 1), { distance: 30 }).map;
-        expect(moved.relief.noiseSeed).toBe(base.relief.noiseSeed);
-        expect(moved.relief.tilt).toEqual(base.relief.tilt);
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it('a bigger move changes the relief more', () => {
-    const base = make(77);
-    const small = perturb(base, seeded(3), { distance: 10, target: 'landform' }).map;
-    const large = perturb(base, seeded(3), { distance: 60, target: 'landform' }).map;
-    expect(maxHeightDifference(base.relief, large.relief))
-      .toBeGreaterThan(maxHeightDifference(base.relief, small.relief));
   });
 });
 

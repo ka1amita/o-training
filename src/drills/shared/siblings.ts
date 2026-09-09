@@ -1,151 +1,124 @@
 import type { Rng } from '@/lib/rng.ts';
-import { maxHeightDifference } from '@/lib/terrain/height.ts';
 import {
-  areasOf, insideCrop, pointsOf, positionOf, type Crop, type Vec,
-} from '@/lib/terrain/omap.ts';
+  applyEdits, difference, proposeEdit,
+  type Edit, type EditSpec, type Variant,
+} from '@/lib/terrain/edits.ts';
+import { positionOf, wholeMap, type Crop, type OMap } from '@/lib/terrain/omap.ts';
 import { suits } from '@/lib/terrain/semantics.ts';
-import {
-  perturb, readGround, type Change, type GeneratedMap, type Ground,
-} from '@/lib/terrain/terrain.ts';
+import { readGround, type Ground } from '@/lib/terrain/terrain.ts';
 
 /**
- * A target and its near-identical siblings, shuffled, with the target's index.
+ * A map and its near-identical siblings, shuffled, with the target's index.
  *
  * Both four-alternative terrain drills need the same thing and the same guarantee: every
  * distractor must differ from the target **in a way the player can actually see**. A
- * sibling whose one moved feature fell outside the visible window, or whose moved landform
- * barely dented the relief, is a second correct answer — which is invisible while playing
- * and reads as the drill being unfair.
+ * sibling whose one moved feature fell outside the visible window, or whose warp barely
+ * dented the relief, is a second correct answer — which is invisible while playing and
+ * reads as the drill being unfair.
+ *
+ * An option is `base` plus its edits, not a finished map: what makes it a sibling is the
+ * edit list, and every check here reads that rather than what it would draw.
  */
 export interface Siblings {
-  readonly options: readonly GeneratedMap[];
+  readonly base: OMap;
+  /** `count` of them; the answer is the one with no edits. */
+  readonly variants: readonly Variant[];
   readonly correctIndex: number;
 }
 
 export interface SiblingOptions {
-  /** How far the one moved feature travels, in metres. Smaller is harder. */
+  /** How far the one edit moves something, in metres. Smaller is harder. */
   readonly distance: number;
-  readonly target?: 'landform' | 'any';
+  /** Which edits the drill will accept. Contours: `['warp']`. */
+  readonly ops: readonly Edit['op'][];
   /** The change must show inside this window, if there is one. */
   readonly crop?: Crop;
-  /** Least acceptable relief difference, in metres. Only checked when targeting landforms. */
-  readonly minHeightDifference?: number;
+  /** Least acceptable relief difference, in metres. */
+  readonly minReliefDelta?: number;
 }
 
 const ATTEMPTS = 24;
 
-function movedFeature(before: GeneratedMap, after: GeneratedMap, change: Change) {
-  const at = (map: GeneratedMap): Vec => {
-    if (change.what === 'landform') {
-      const f = map.relief.landforms[change.index]!;
-      return { x: f.x, y: f.y };
-    }
-    const list = change.what === 'point' ? pointsOf(map) : areasOf(map);
-    return positionOf(list[change.index]!);
-  };
-  return { from: at(before), to: at(after) };
-}
-
 /**
- * Whether the moved feature still belongs where it now is.
+ * Whether the changed thing still belongs where it now is.
  *
- * Once the generator places a marsh in flat, low ground and a crag on steep ground, a
- * perturbation that drops one somewhere else is a **tell**: a strong player learns to
- * pick the odd card out by spotting the marsh on the hillside rather than by remembering
- * the ground, which is a different skill and not the one being trained.
+ * Once the generator places a marsh in flat, low ground and a crag on steep ground, an
+ * edit that drops one somewhere else is a **tell**: a strong player learns to pick the odd
+ * card out by spotting the marsh on the hillside rather than by remembering the ground,
+ * which is a different skill and not the one being trained.
  *
  * It is a preference and not a filter. Insisting on it would push more rounds onto the
  * `distance * 2.5` fallback below, and a distractor that differs by far more than the
  * level asked for is a worse question than a slightly odd marsh.
+ *
+ * A warp has nothing to answer: it moves the ground itself, and the ground is never in
+ * the wrong place.
  */
-export function isPlausibleChange(after: GeneratedMap, change: Change, ground: Ground): boolean {
-  if (change.what === 'landform') return true;
-  const moved = (change.what === 'area' ? areasOf(after) : pointsOf(after))[change.index]!;
-  return suits(moved.code, ground, positionOf(moved));
+export function isPlausibleChange(variant: Variant, ground: Ground): boolean {
+  const after = applyEdits(variant.base, variant.edits);
+  return variant.edits.every((edit) => {
+    if (edit.op === 'warp') return true;
+    if (edit.op === 'remove') return true;
+    const id = edit.op === 'add' ? edit.feature.id : edit.feature;
+    const moved = after.features.find((f) => f.id === id);
+    return !moved || suits(moved.code, ground, positionOf(moved));
+  });
 }
 
-/** Whether this perturbation is one the player could notice. */
-export function isVisibleChange(
-  before: GeneratedMap,
-  after: GeneratedMap,
-  change: Change,
-  options: SiblingOptions,
-): boolean {
-  const { from, to } = movedFeature(before, after, change);
-  if (options.crop && !insideCrop(from, options.crop) && !insideCrop(to, options.crop)) return false;
-  if (options.target === 'landform') {
-    const floor = options.minHeightDifference ?? 1;
-    if (maxHeightDifference(before.relief, after.relief) < floor) return false;
-  }
-  return true;
+/** Whether this edit is one the player could notice. */
+export function isVisibleChange(variant: Variant, options: SiblingOptions): boolean {
+  const window_ = options.crop ?? wholeMap(variant.base);
+  const report = difference(variant, window_);
+  if (!report.visible) return false;
+  // A warp that barely dents the shading is a second right answer. The drill that reads
+  // relief states its own floor; one metre is the default for a caller that does not.
+  const floor = options.minReliefDelta ?? (options.ops.every((op) => op === 'warp') ? 1 : 0);
+  return report.reliefDelta >= floor;
 }
 
 export function siblings(
   rng: Rng,
-  base: GeneratedMap,
+  base: OMap,
   count: number,
   options: SiblingOptions,
 ): Siblings {
-  const made: GeneratedMap[] = [];
+  const made: Variant[] = [];
 
-  // Sampled once for the whole round. Perturbing a point or an area leaves the height
-  // field alone, so every candidate is judged against the same ground; targeting a
-  // landform changes the field, and there plausibility has nothing to say anyway.
-  const ground = options.target === 'landform' ? null : readGround(base.relief);
+  // Sampled once for the whole round. An edit that moves a feature leaves the height
+  // field alone, so every candidate is judged against the same ground; a round that only
+  // warps has nothing to ask it, and reading the ground is not free.
+  const ground = options.ops.some((op) => op !== 'warp') ? readGround(base.relief) : null;
+
+  const spec = (distance: number): EditSpec => ({
+    distance,
+    ops: options.ops,
+    ...(options.crop ? { within: options.crop } : {}),
+    ...(options.minReliefDelta === undefined ? {} : { minReliefDelta: options.minReliefDelta }),
+  });
 
   while (made.length < count - 1) {
-    let accepted: GeneratedMap | null = null;
-    let visibleOnly: GeneratedMap | null = null;
+    let accepted: Variant | null = null;
+    let visibleOnly: Variant | null = null;
     for (let attempt = 0; attempt < ATTEMPTS && !accepted; attempt++) {
-      const { map: candidate, change } = perturb(base, rng, {
-        distance: options.distance,
-        ...(options.target ? { target: options.target } : {}),
-        ...(options.crop ? { within: options.crop } : {}),
-      });
-      if (!isVisibleChange(base, candidate, change, options)) continue;
-      if (!ground || isPlausibleChange(candidate, change, ground)) accepted = candidate;
-      else visibleOnly ??= candidate;
+      const variant: Variant = {
+        base,
+        edits: [proposeEdit(base, rng, spec(options.distance))],
+      };
+      if (!isVisibleChange(variant, options)) continue;
+      if (!ground || isPlausibleChange(variant, ground)) accepted = variant;
+      else visibleOnly ??= variant;
     }
     accepted ??= visibleOnly;
     // Falling back to a bigger move is better than shipping an unanswerable round: an
     // easier distractor is a worse question, a duplicate of the answer is not a question.
     made.push(
-      accepted ??
-        perturb(base, rng, {
-          distance: options.distance * 2.5,
-          ...(options.target ? { target: options.target } : {}),
-          ...(options.crop ? { within: options.crop } : {}),
-        }).map,
+      accepted ?? { base, edits: [proposeEdit(base, rng, spec(options.distance * 2.5))] },
     );
   }
 
   const correctIndex = rng.int(count);
-  const options_ = [...made];
-  options_.splice(correctIndex, 0, base);
-  return { options: options_, correctIndex };
-}
-
-/**
- * Whether two siblings differ somewhere the window can show.
- *
- * `siblings()` guarantees this when it builds a round; this is the same claim stated over
- * the finished terrains, so `wellFormed` can check it without being handed the change.
- * Perturbation preserves list order, so the comparison is index by index.
- */
-export function differsWithin(a: GeneratedMap, b: GeneratedMap, crop: Crop): boolean {
-  const lists: readonly (readonly [readonly Vec[], readonly Vec[]])[] = [
-    [a.relief.landforms, b.relief.landforms],
-    [pointsOf(a).map(positionOf), pointsOf(b).map(positionOf)],
-    [areasOf(a).map(positionOf), areasOf(b).map(positionOf)],
-  ];
-  for (const [left, right] of lists) {
-    if (left.length !== right.length) return true;
-    for (let i = 0; i < left.length; i++) {
-      const p = left[i]!;
-      const q = right[i]!;
-      if (p.x === q.x && p.y === q.y) continue;
-      if (insideCrop(p, crop) || insideCrop(q, crop)) return true;
-    }
-  }
-  return false;
+  const variants = [...made];
+  // The answer is the base itself, and it says so: no edits.
+  variants.splice(correctIndex, 0, { base, edits: [] });
+  return { base, variants, correctIndex };
 }

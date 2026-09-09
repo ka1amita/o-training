@@ -3,21 +3,29 @@ import fc from 'fast-check';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import { maxHeightDifference } from '@/lib/terrain/height.ts';
 import { goldenMap } from '@/lib/terrain/golden.ts';
+import type { GeneratedMap } from '@/lib/terrain/terrain.ts';
 import {
   contours as drill, distanceFor, OPTIONS, MIN_HEIGHT_DIFFERENCE, type ContoursRound,
 } from './drill.ts';
 import {
   mapMemory, CROP_SIZE, paramsFor as memoryParams, type MapMemoryRound,
 } from '@/drills/mapMemory/drill.ts';
-import { differsWithin } from '@/drills/shared/siblings.ts';
+import { applyEdits, difference } from '@/lib/terrain/edits.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: 1, max: 10 });
 const gen = (seed: number, level: number) => drill.generate(seeded(seed), level);
 
-/** The generator's decisions, not the shape of the round. See `goldenMap`. */
+/** What a round would actually show, made from its edits. */
+const materialise = (round: ContoursRound | MapMemoryRound) =>
+  round.variants.map((v) => applyEdits(v.base, v.edits) as GeneratedMap);
+
+/**
+ * The generator's decisions, not the shape of the round. See `goldenMap` — the field
+ * names here are part of the hash and are frozen, so they are not the round's own.
+ */
 const golden = (round: ContoursRound) => ({
-  options: round.options.map(goldenMap),
+  options: materialise(round).map(goldenMap),
   correctIndex: round.correctIndex,
 });
 
@@ -37,8 +45,11 @@ describe('contours / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const round = gen(seed, level);
-        const answer = round.options[round.correctIndex]!;
-        const identical = round.options.filter(
+        // Materialised on purpose: `wellFormed` reads the edits, and this reads the
+        // ground they produce, so a mistake in one cannot hide a mistake in the other.
+        const options = materialise(round);
+        const answer = options[round.correctIndex]!;
+        const identical = options.filter(
           (o, i) =>
             i !== round.correctIndex &&
             maxHeightDifference(answer.relief, o.relief) < MIN_HEIGHT_DIFFERENCE,
@@ -53,7 +64,7 @@ describe('contours / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const round = gen(seed, level);
-        expect(round.options).toHaveLength(OPTIONS);
+        expect(round.variants).toHaveLength(OPTIONS);
         expect(round.correctIndex).toBeGreaterThanOrEqual(0);
         expect(round.correctIndex).toBeLessThan(OPTIONS);
       }),
@@ -70,7 +81,7 @@ describe('contours / generate', () => {
     // Boulders and paths say nothing about the shape of the ground, and on a card that is
     // only about the ground they are noise the player has to learn to ignore.
     const round = gen(4, 6);
-    for (const option of round.options) expect(option.features).toHaveLength(0);
+    for (const option of materialise(round)) expect(option.features).toHaveLength(0);
   });
 
   it('moves the landform less as the level rises', () => {
@@ -83,9 +94,10 @@ describe('contours / generate', () => {
   it('is harder at level 10 than at level 1, measured on the relief', () => {
     const spread = (level: number) => {
       const round = gen(9, level);
-      const answer = round.options[round.correctIndex]!;
+      const options = materialise(round);
+      const answer = options[round.correctIndex]!;
       return Math.min(
-        ...round.options
+        ...options
           .filter((_, i) => i !== round.correctIndex)
           .map((o) => maxHeightDifference(answer.relief, o.relief)),
       );
@@ -112,10 +124,10 @@ describe('contours / wellFormed detects what it claims to', () => {
   const good = gen(3, 5);
 
   it('catches a distractor identical to the answer', () => {
-    const answer = good.options[good.correctIndex]!;
+    const answer = good.variants[good.correctIndex]!;
     const broken: ContoursRound = {
       ...good,
-      options: good.options.map((o, i) => (i === good.correctIndex ? o : answer)),
+      variants: good.variants.map((v, i) => (i === good.correctIndex ? v : answer)),
     };
     expect(drill.wellFormed(broken).join(' ')).toContain('differs from the answer by only');
   });
@@ -125,7 +137,7 @@ describe('contours / wellFormed detects what it claims to', () => {
   });
 
   it('catches the wrong number of options', () => {
-    expect(drill.wellFormed({ ...good, options: good.options.slice(1) }).join(' '))
+    expect(drill.wellFormed({ ...good, variants: good.variants.slice(1) }).join(' '))
       .toContain('options, expected');
   });
 
@@ -151,7 +163,7 @@ describe('contours / score', () => {
 describe('map memory / generate', () => {
   const memGen = (seed: number, level: number) => mapMemory.generate(seeded(seed), level);
   const goldenMemory = (round: MapMemoryRound) => ({
-    options: round.options.map(goldenMap),
+    options: materialise(round).map(goldenMap),
     correctIndex: round.correctIndex,
     crop: round.crop,
     exposureMs: round.exposureMs,
@@ -172,10 +184,9 @@ describe('map memory / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const round = memGen(seed, level);
-        const answer = round.options[round.correctIndex]!;
-        round.options.forEach((option, index) => {
+        round.variants.forEach((variant, index) => {
           if (index === round.correctIndex) return;
-          expect(differsWithin(answer, option, round.crop)).toBe(true);
+          expect(difference(variant, round.crop).visible).toBe(true);
         });
       }),
       { numRuns: 80 },
@@ -186,7 +197,7 @@ describe('map memory / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const round = memGen(seed, level);
-        const size = round.options[0]!.width;
+        const size = round.base.width;
         expect(round.crop.x).toBeGreaterThanOrEqual(0);
         expect(round.crop.y).toBeGreaterThanOrEqual(0);
         expect(round.crop.x + CROP_SIZE).toBeLessThanOrEqual(size);
@@ -211,10 +222,10 @@ describe('map memory / generate', () => {
 
   it('catches a distractor identical inside the window', () => {
     const good = memGen(3, 5);
-    const answer = good.options[good.correctIndex]!;
+    const answer = good.variants[good.correctIndex]!;
     const broken = {
       ...good,
-      options: good.options.map((o, i) => (i === good.correctIndex ? o : answer)),
+      variants: good.variants.map((v, i) => (i === good.correctIndex ? v : answer)),
     };
     expect(mapMemory.wellFormed(broken).join(' ')).toContain('identical to the answer');
   });

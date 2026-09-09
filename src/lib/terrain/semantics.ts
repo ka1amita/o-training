@@ -181,6 +181,24 @@ export const SEMANTICS: Readonly<Record<IsomCode, Semantics>> = {
   },
 };
 
+/**
+ * How strongly each colour separates from the white forest it is drawn on.
+ *
+ * The input to salience, and the reason a moved boulder is a fairer question than a moved
+ * form line at the same distance: black on white is the strongest mark ISOM has, and a
+ * light yellow wash is the weakest. Eyeballed, not measured — it orders the colours, and
+ * nothing yet depends on the gaps between them.
+ */
+export const CONTRAST: Readonly<Record<Colour, number>> = {
+  black: 1,
+  purple: 0.9,
+  brown: 0.7,
+  blue: 0.6,
+  green: 0.5,
+  grey: 0.4,
+  yellow: 0.35,
+};
+
 export function semanticsOf(code: IsomCode): Semantics | undefined {
   return SEMANTICS[code];
 }

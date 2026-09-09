@@ -1,9 +1,7 @@
 import type { Rng } from '@/lib/rng.ts';
 import { contributionOf, downhillAt, sampleGridAt, slopeAt, type Grid } from './height.ts';
 import { ISOM_SCALE } from './isom.ts';
-import {
-  areasOf, movedTo, pointsOf, positionOf, type Feature, type OMap, type Vec,
-} from './omap.ts';
+import type { Feature, OMap, Vec } from './omap.ts';
 import { AnalyticRelief, type Landform, type Relief } from './relief.ts';
 import { CODE_OF, CRAG_STEEPEST, suits, type IsomCode } from './semantics.ts';
 import { areaOutline } from './shapes.ts';
@@ -1069,106 +1067,4 @@ function toFeatures(
       size: f.size,
     })),
   ];
-}
-
-/** What a perturbation did, so a test can assert it did something. */
-export interface Change {
-  readonly what: 'landform' | 'point' | 'area';
-  readonly index: number;
-  /** How far the feature moved, in metres. */
-  readonly distance: number;
-}
-
-export interface Perturbed {
-  readonly map: GeneratedMap;
-  readonly change: Change;
-}
-
-/**
- * Moves exactly one feature, and says which.
- *
- * `target: 'landform'` is for drills read off the relief — moving a boulder changes the
- * map and not the contours, so a contour distractor perturbed anywhere else would be
- * identical to the answer.
- */
-export function perturb(
-  map: GeneratedMap,
-  rng: Rng,
-  options: {
-    readonly distance: number;
-    readonly target?: 'landform' | 'any';
-    /**
-     * Move something whose centre lies in this window.
-     *
-     * Without it the choice is uniform over the whole map, and a drill that shows one
-     * window then asks what moved gets a distractor identical to the answer whenever the
-     * draw lands outside. Retrying covered that while features were spread evenly; once
-     * they came in clusters, a window that missed the rocky band held almost nothing and
-     * the retries ran out. Choosing from what is *in* the window makes it structural
-     * rather than probable.
-     */
-    readonly within?: { readonly x: number; readonly y: number; readonly size: number };
-  },
-): Perturbed {
-  const { distance, within } = options;
-  const target = options.target ?? 'any';
-  const points = pointsOf(map);
-  const areas = areasOf(map);
-
-  const inWindow = (f: Vec): boolean =>
-    !within ||
-    (f.x >= within.x && f.x <= within.x + within.size &&
-      f.y >= within.y && f.y <= within.y + within.size);
-
-  /** Indices of the features of one list that the window can show. */
-  const usable = (list: readonly Vec[]): number[] => {
-    const inside = list.flatMap((f, i) => (inWindow(f) ? [i] : []));
-    // A window with nothing in it cannot be helped here; `wellFormed` is what catches it.
-    return inside.length > 0 ? inside : list.map((_, i) => i);
-  };
-
-  const pools: Change['what'][] =
-    target === 'landform'
-      ? ['landform']
-      : [
-          ...(map.relief.landforms.length > 0 ? (['landform'] as const) : []),
-          ...(points.length > 0 ? (['point'] as const) : []),
-          ...(areas.length > 0 ? (['area'] as const) : []),
-        ];
-  const what = rng.pick(pools);
-
-  // A random direction at a fixed distance: the move is always exactly as large as asked,
-  // so difficulty is the number that was requested rather than one that came out of a
-  // uniform square and averaged smaller.
-  const angle = rng.range(0, 2 * Math.PI);
-  const dx = Math.cos(angle) * distance;
-  const dy = Math.sin(angle) * distance;
-  const clamp = (v: number) => Math.min(map.width, Math.max(0, v));
-
-  if (what === 'landform') {
-    const index = rng.pick(usable(map.relief.landforms));
-    const f = map.relief.landforms[index]!;
-    const relief = map.relief.warped({
-      centre: { x: f.x, y: f.y },
-      radius: f.radius * f.elongation,
-      dx,
-      dy,
-    });
-    return { map: { ...map, relief }, change: { what, index, distance } };
-  }
-
-  // A window with nothing of this kind in it falls back to the whole list, exactly as
-  // `usable` says; the pick is still one draw either way, so the stream does not move.
-  const list = what === 'point' ? points : areas;
-  const index = rng.pick(usable(list.map(positionOf)));
-  const moved = list[index]!;
-  const from = positionOf(moved);
-  const to = { x: clamp(from.x + dx), y: clamp(from.y + dy) };
-  return {
-    map: {
-      ...map,
-      features: map.features.map((f) => (f.id === moved.id ? movedTo(f, to) : f)),
-    },
-    change: { what, index, distance },
-  };
 }

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Verdict from '@/components/Verdict.tsx';
 import type { PlayProps } from '@/drills/types.ts';
+import { applyEdits } from '@/lib/terrain/edits.ts';
 import MapView from '@/lib/terrain/MapView.tsx';
 import type { MapMemoryAnswer, MapMemoryRound } from './drill.ts';
 
@@ -36,7 +37,11 @@ export default function Play({ round, onDone }: PlayProps<MapMemoryRound, MapMem
     return () => window.clearTimeout(id);
   }, [picked, round.correctIndex, onDone]);
 
-  const answer = round.options[round.correctIndex]!;
+  const options = useMemo(
+    () => round.variants.map((v) => applyEdits(v.base, v.edits)),
+    [round],
+  );
+  const answer = options[round.correctIndex]!;
 
   if (phase === 'showing') {
     return (
@@ -63,7 +68,7 @@ export default function Play({ round, onDone }: PlayProps<MapMemoryRound, MapMem
     <div className="flex flex-1 flex-col gap-3">
       <p className="m-0 text-center text-sm text-muted">Which one was it?</p>
       <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0">
-        {round.options.map((option, index) => {
+        {options.map((option, index) => {
           const state =
             picked === null ? 'idle'
             : index === round.correctIndex ? 'right'
