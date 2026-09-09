@@ -101,6 +101,13 @@ function terrainFor(level: number, size: number): TerrainParams {
     points: scale(12, 20),
     lines: scale(2, 3),
     areas: scale(3, 6),
+    // Both off, and for the same reason: a site is a ring holding one nameable thing, and
+    // these two fill rings with things that are not answers. A ride is a black line the
+    // player reads as a path (see `LOOKALIKES`), and a rock field puts a second boulder
+    // inside every circle a boulder could have. With either of them on, a level 10 pair of
+    // cards runs out of sites before it has the five circles the level asks for.
+    rides: 0,
+    clusters: 0,
   };
 }
 
