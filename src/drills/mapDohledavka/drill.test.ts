@@ -222,7 +222,7 @@ describe('map dohledavka / determinism', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     const rounds = [1, 2].flatMap((s) => [1, 5, 9].map((l) => gen(s, l)));
-    expect(hashJson(rounds)).toMatchInlineSnapshot(`"6a4601f3"`);
+    expect(hashJson(rounds)).toMatchInlineSnapshot(`"e33ad023"`);
   });
 });
 

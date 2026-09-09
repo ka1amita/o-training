@@ -88,11 +88,18 @@ export function paramsFor(level: number): PexesoParams {
   return { pairs, shiftFraction: 0.22 + ((0.58 - 0.22) * (clamped - 1)) / 9 };
 }
 
-/** Somewhere both crops can reach without leaving the map. */
-function controlFor(rng: Rng, map: OMap, halfSpan: number): Vec {
+/**
+ * Everywhere a control could stand: somewhere both crops can reach without leaving the
+ * map, and something on the ground rather than a patch of empty forest.
+ *
+ * Exported so the properties can assert the control is *one of these* rather than restate
+ * the list — a copy of it in a test agrees with a broken `controlFor` as readily as with a
+ * working one, which is how the two-draw bug below survived a test that named it.
+ */
+export function controlCandidates(map: OMap, halfSpan: number): Vec[] {
   const lo = halfSpan;
   const hi = map.width - halfSpan;
-  const candidates = [
+  return [
     ...pointsOf(map).map(positionOf),
     // A summit is worth finding too, and every map says where its summits are the same
     // way: through its analysis. This used to ask the analytic relief for its landform
@@ -105,11 +112,24 @@ function controlFor(rng: Rng, map: OMap, halfSpan: number): Vec {
     // the order it always did — every golden here is a `rng.pick` over this array.
     ...(map.analysis?.controlSites ?? []),
   ].filter((f) => f.x >= lo && f.x <= hi && f.y >= lo && f.y <= hi);
+}
+
+function controlFor(rng: Rng, map: OMap, halfSpan: number): Vec {
+  const candidates = controlCandidates(map, halfSpan);
   // Anchoring on a feature is what makes the control worth finding. A map whose features
   // all sit near the edge still has to produce a pair, so the fallback is the interior.
-  return candidates.length > 0
-    ? { x: rng.pick(candidates).x, y: rng.pick(candidates).y }
-    : { x: rng.range(lo, hi), y: rng.range(lo, hi) };
+  //
+  // **One draw, not two.** This read `{ x: rng.pick(c).x, y: rng.pick(c).y }`, which takes
+  // x from one feature and y from another and names a place that has neither: on a map
+  // offering twenty candidates, nineteen controls in twenty stood on empty forest, which
+  // is exactly the card the line above says it is there to prevent. It reads as an
+  // idiomatic pick and it is not one, so it is written out.
+  if (candidates.length === 0) {
+    const lo = halfSpan;
+    return { x: rng.range(lo, map.width - lo), y: rng.range(lo, map.width - lo) };
+  }
+  const anchor = rng.pick(candidates);
+  return { x: anchor.x, y: anchor.y };
 }
 
 export const pexeso = defineDrill<PexesoRound, PexesoAnswer>({

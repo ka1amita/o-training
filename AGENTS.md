@@ -95,6 +95,12 @@ stale state and the round could not finish.
 - `MapView` culls to the window — 381 elements to 228 on a 12-card board.
 - The contours drill edits with a **warp** (a boulder has no relief); map memory's edit
   must land **inside the window**, or two candidates are identical.
+- **A pexeso control is one draw from the candidate list, not two.**
+  `{ x: rng.pick(c).x, y: rng.pick(c).y }` takes x from one feature and y from another and
+  stands the control where neither of them is — an anchor on empty forest, which is the
+  card the drill exists not to deal. It reads as an idiomatic pick, it passed every
+  property the round had, and a test that met it wrote it down as a quirk of the generator
+  and pinned it instead. Assert the whole point, never a coordinate at a time.
 - **A distractor is `base + edits`.** `wellFormed` reads the edits and the window, never
   the map they make — `difference()` is where "how different" is answered, and its
   `visible` is a **position** test on what moved, not `footprint > 0`. A warp whose disc

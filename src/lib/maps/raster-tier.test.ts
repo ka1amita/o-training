@@ -101,19 +101,20 @@ describe('the drills, on a map made of pixels', () => {
     for (const level of [1, 5, 10]) {
       const round = pexeso.generate(seeded(level), level, ctx);
       expect(pexeso.wellFormed(round), `level ${level}`).toEqual([]);
-      // Every control is anchored to something the mask found rather than to the
-      // interior fallback, which is what `controlSites` is for: a control on empty forest
-      // is a card with nothing to recognise.
+      // Every control stands on a site the mask found, rather than on the interior
+      // fallback: that is what `controlSites` is for, because a control on empty forest is
+      // a card with nothing to recognise.
       //
-      // Coordinate by coordinate, because `controlFor` draws from the candidate list
-      // *twice* — x from one, y from another. That is a quirk of the generator every
-      // pexeso golden is pinned to, so it is not this step's to change; what this asserts
-      // is that both draws came from the mask's sites and not from `rng.range`.
-      const xs = new Set(picture.analysis!.controlSites!.map((s) => s.x));
-      const ys = new Set(picture.analysis!.controlSites!.map((s) => s.y));
+      // This used to check the coordinates separately — x from the set of site xs, y from
+      // the set of site ys — because `controlFor` drew from the candidate list twice and
+      // no whole site had both. The two-draw pick was the bug, not a quirk to pin: on this
+      // fixture it put the control on a real blob about one time in thirty.
+      const sites = picture.analysis!.controlSites!;
       for (const card of round.cards) {
-        expect(xs.has(card.control.x), `pair ${card.pairId} x`).toBe(true);
-        expect(ys.has(card.control.y), `pair ${card.pairId} y`).toBe(true);
+        expect(
+          sites.some((s) => s.x === card.control.x && s.y === card.control.y),
+          `pair ${card.pairId}`,
+        ).toBe(true);
       }
     }
   });

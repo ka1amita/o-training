@@ -3,7 +3,9 @@ import fc from 'fast-check';
 import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import { goldenMap } from '@/lib/terrain/golden.ts';
-import { pexeso as drill, paramsFor, attemptBudget, CROP_SIZE, type PexesoRound } from './drill.ts';
+import {
+  pexeso as drill, paramsFor, attemptBudget, controlCandidates, CROP_SIZE, type PexesoRound,
+} from './drill.ts';
 import { initialState, pexesoReduce, type PexesoEvent, type PexesoState } from './state.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
@@ -46,6 +48,30 @@ describe('pexeso / generate', () => {
           expect(card.control.x).toBeLessThanOrEqual(x + size);
           expect(card.control.y).toBeGreaterThanOrEqual(y);
           expect(card.control.y).toBeLessThanOrEqual(y + size);
+        }
+      }),
+      { numRuns: 120 },
+    );
+  });
+
+  it('stands every control on something the map draws', () => {
+    // The point of the drill: a card is matched by recognising the ground in it, and the
+    // control is what the eye starts from. A control on blank forest is a card with
+    // nothing to recognise — and that is what a two-draw `rng.pick` produced, taking x
+    // from one feature and y from another so the control landed on neither.
+    fc.assert(
+      fc.property(anySeed, anyLevel, (seed, level) => {
+        const round = gen(seed, level);
+        const halfSpan = CROP_SIZE / 2 + round.shift / 2;
+        for (const card of round.cards) {
+          const map = round.maps[card.pairId]!;
+          const candidates = controlCandidates(map, halfSpan);
+          // The interior fallback is legal, but only where the map offered nothing.
+          if (candidates.length === 0) continue;
+          expect(
+            candidates.some((c) => c.x === card.control.x && c.y === card.control.y),
+            `pair ${card.pairId}`,
+          ).toBe(true);
         }
       }),
       { numRuns: 120 },
@@ -117,7 +143,10 @@ describe('pexeso / generate', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     expect(hashJson([1, 2].flatMap((s) => [1, 6, 10].map((l) => golden(gen(s, l))))))
-      .toMatchInlineSnapshot(`"a5f3197e"`);
+      // Re-pinned once, on purpose: `controlFor` drew from its candidate list twice and
+      // now draws once, which is one rng draw fewer per pair and moves every card after
+      // it. Nothing else about generation changed.
+      .toMatchInlineSnapshot(`"3569fca9"`);
   });
 });
 
