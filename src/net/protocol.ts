@@ -23,7 +23,33 @@ export type Message =
       readonly seed: number;
       readonly level: number;
       readonly rounds: number;
+      /**
+       * Which maps the host's rounds come from — `'generated'`, `'library:<hashes>'`,
+       * `'mixed:…'`. An **id and never a map**: content hashes and weights, no geometry,
+       * which is the same privacy stance as the seed standing in for the deck.
+       *
+       * A round is a function of `(seed, level, provider.id)`, so two peers that agreed on
+       * the first two and not the third would derive different rounds from one seed.
+       * Dohledavka is a symbol drill and uses no map at all today, so nothing here changes
+       * a deck; it is what a terrain drill would need the day one becomes multiplayer, and
+       * carrying it now is what makes that day a UI change rather than a protocol change.
+       *
+       * **Optional, and the version did not move.** A peer on an older build sends no id
+       * and refuses any protocol but its own, so bumping the version would have ended
+       * every game with an older phone to add a field that older phone does not read.
+       * Absent reads as `'generated'`, which is what an older build in fact plays.
+       */
+      readonly providerId?: string;
     }
+  /**
+   * Joiner to host: the maps I have.
+   *
+   * The other half of the comparison. Without it only the joiner could tell that the two
+   * devices hold different libraries, and "both fall back to generated" would be one peer
+   * falling back alone — which is the desync it exists to prevent. An older host drops it
+   * as an unknown message and stays on what it always played, which is generated.
+   */
+  | { readonly t: 'maps'; readonly providerId?: string }
   /** Joiner to host: I have found it. Only correct taps are sent; a miss costs only time. */
   | { readonly t: 'tap'; readonly round: number }
   /** Host to joiner: who took the round, and the score as the host has it. */
@@ -59,14 +85,25 @@ export function decode(raw: string): Message | null {
       ? (m.scores as Scores)
       : null;
 
+  // An id that is not a string is an id from a build this one does not understand, and is
+  // dropped rather than carried: absent means "generated", which is a safe thing to be
+  // wrong about, while `[object Object]` would be an id two peers could agree on by
+  // accident.
+  const providerId = () => (typeof m.providerId === 'string' ? { providerId: m.providerId } : {});
+
   switch (m.t) {
     case 'hello':
       return typeof m.protocol === 'number' &&
         typeof m.seed === 'number' &&
         typeof m.level === 'number' &&
         typeof m.rounds === 'number'
-        ? { t: 'hello', protocol: m.protocol, seed: m.seed, level: m.level, rounds: m.rounds }
+        ? {
+            t: 'hello', protocol: m.protocol, seed: m.seed, level: m.level, rounds: m.rounds,
+            ...providerId(),
+          }
         : null;
+    case 'maps':
+      return { t: 'maps', ...providerId() };
     case 'tap': {
       const r = round();
       return r === null ? null : { t: 'tap', round: r };

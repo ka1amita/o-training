@@ -18,6 +18,19 @@ export interface PeerState {
   readonly rounds: number;
   readonly seed: number;
   readonly level: number;
+  /** What this device's own maps would make a round out of — its `MapProvider.id`. */
+  readonly ownProviderId: string;
+  /**
+   * What the match runs on: the id both devices are known to hold.
+   *
+   * `'generated'` until each side has heard the other's and found it the same, because
+   * that is the one source both peers certainly have. A round is a function of
+   * `(seed, level, provider.id)`, and a match that ran on an id only one of them could
+   * resolve would be two different games with one scoreboard.
+   */
+  readonly providerId: string;
+  /** The two devices hold different maps, so the match dropped to generated. Said once. */
+  readonly mapsDiffer: boolean;
   readonly scores: Scores;
   /** Who took the current round, or null while it is still open. */
   readonly winner: Side | null;
@@ -40,21 +53,40 @@ export interface HostGame {
   readonly seed: number;
   readonly level: number;
   readonly rounds: number;
+  /** This device's `MapProvider.id`. Optional, and defaults to the source every device
+   *  has: a caller with no policy to consult is one from before there were policies. */
+  readonly providerId?: string;
 }
 
 const NO_SCORE: Scores = { host: 0, joiner: 0 };
 
+/**
+ * The source both peers certainly have.
+ *
+ * Every device can generate, nothing has to be downloaded for it, and a build old enough
+ * to send no id at all is a build that plays exactly this. So it is both the default and
+ * the fallback, and those being the same value is what makes disagreement safe.
+ */
+export const GENERATED = 'generated';
+
 export function hostState(game: HostGame): PeerState {
   return {
     side: 'host', round: 0, rounds: game.rounds, seed: game.seed, level: game.level,
+    ownProviderId: game.providerId ?? GENERATED,
+    // Not its own id yet: until the joiner has answered, the host does not know whether
+    // the other device can resolve it. Split screen never answers and never needs to —
+    // one device is trivially in agreement with itself, and it plays generated today.
+    providerId: GENERATED,
+    mapsDiffer: false,
     scores: NO_SCORE, winner: null, started: true, finished: false,
   };
 }
 
 /** The joiner knows nothing until `hello` arrives, so it starts empty and unstarted. */
-export function joinerState(): PeerState {
+export function joinerState(providerId: string = GENERATED): PeerState {
   return {
     side: 'joiner', round: 0, rounds: 0, seed: 0, level: 0,
+    ownProviderId: providerId, providerId: GENERATED, mapsDiffer: false,
     scores: NO_SCORE, winner: null, started: false, finished: false,
   };
 }
@@ -88,10 +120,25 @@ function receive(state: PeerState, message: Message): Step {
       if (state.side !== 'joiner' || message.protocol !== PROTOCOL_VERSION) return [state, []];
       if (state.started) return [state, []]; // a repeat of hello changes nothing
       return [
-        { ...state, seed: message.seed, level: message.level, rounds: message.rounds, started: true },
-        [],
+        {
+          ...state,
+          seed: message.seed,
+          level: message.level,
+          rounds: message.rounds,
+          started: true,
+          ...agreementWith(state, message.providerId),
+        },
+        // Answered whatever the outcome, because the host cannot compare without it, and
+        // a host that never hears stays on generated — see `maps` in `protocol.ts`.
+        [{ t: 'maps', providerId: state.ownProviderId }],
       ];
     }
+
+    case 'maps':
+      // The host's half of the same comparison. Idempotent: the answer is a function of
+      // the two ids, so a duplicate delivery recomputes the same one.
+      if (state.side !== 'host') return [state, []];
+      return [{ ...state, ...agreementWith(state, message.providerId) }, []];
 
     case 'tap':
       // Only the host resolves, only for the round in play, and only once. That single
@@ -119,6 +166,26 @@ function receive(state: PeerState, message: Message): Step {
       if (state.side !== 'joiner') return [state, []];
       return [{ ...state, scores: message.scores, finished: true }, []];
   }
+}
+
+/**
+ * What the match runs on, given what the other side says it holds.
+ *
+ * Same rule on both sides, from the same two values, so the two devices reach the same
+ * answer without a third message: the shared id when they match, and generated when they
+ * do not. Absent is generated, because that is what a build too old to send one plays.
+ *
+ * Ids only — a `library:` id is a list of content hashes, and no map ever crosses the
+ * wire. Two peers holding the same bundles agree because the hashes agree, not because
+ * anyone described a map.
+ */
+function agreementWith(
+  state: PeerState,
+  theirs: string | undefined,
+): Pick<PeerState, 'providerId' | 'mapsDiffer'> {
+  const other = theirs ?? GENERATED;
+  const agree = other === state.ownProviderId;
+  return { providerId: agree ? other : GENERATED, mapsDiffer: !agree };
 }
 
 function award(state: PeerState, winner: Side): Step {
@@ -153,5 +220,7 @@ export function helloFor(state: PeerState): Message {
     seed: state.seed,
     level: state.level,
     rounds: state.rounds,
+    // What this device's maps are, never what they contain.
+    providerId: state.ownProviderId,
   };
 }

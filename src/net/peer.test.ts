@@ -13,9 +13,9 @@ class Game {
   joiner: PeerState;
   private queue: { to: Side; message: Message }[] = [];
 
-  constructor(rounds = 3, seed = 4242, level = 5) {
-    this.host = hostState({ seed, level, rounds });
-    this.joiner = joinerState();
+  constructor(rounds = 3, seed = 4242, level = 5, maps = ['generated', 'generated']) {
+    this.host = hostState({ seed, level, rounds, providerId: maps[0]! });
+    this.joiner = joinerState(maps[1]!);
     this.queue.push({ to: 'joiner', message: helloFor(this.host) });
   }
 
@@ -87,6 +87,82 @@ describe('peer / handshake', () => {
   it('a joiner that has not had hello yet sends nothing when it taps', () => {
     const [, outgoing] = peerReduce(joinerState(), { type: 'found' });
     expect(outgoing).toEqual([]);
+  });
+});
+
+describe('peer / which maps the match runs on', () => {
+  const LIBRARY = 'library:abc123';
+
+  it('two devices holding the same maps play on them', () => {
+    const g = new Game(3, 1, 5, [LIBRARY, LIBRARY]).flush();
+    expect(g.host.providerId).toBe(LIBRARY);
+    expect(g.joiner.providerId).toBe(LIBRARY);
+    expect(g.host.mapsDiffer).toBe(false);
+    expect(g.joiner.mapsDiffer).toBe(false);
+  });
+
+  it('two devices holding different maps both fall back to generated', () => {
+    // The desync this exists to prevent: a round is a function of (seed, level,
+    // provider.id), so one peer resolving an id the other cannot would be two games with
+    // one scoreboard. Both sides reach the same answer from the same two ids.
+    const g = new Game(3, 1, 5, [LIBRARY, 'library:other']).flush();
+    expect(g.host.providerId).toBe('generated');
+    expect(g.joiner.providerId).toBe('generated');
+    expect(g.host.mapsDiffer).toBe(true);
+    expect(g.joiner.mapsDiffer).toBe(true);
+  });
+
+  it('says nothing when both are simply on the default', () => {
+    const g = new Game().flush();
+    expect(g.host.mapsDiffer).toBe(false);
+    expect(g.joiner.mapsDiffer).toBe(false);
+    expect(g.host.providerId).toBe('generated');
+  });
+
+  it('a peer on an older build still plays, on generated', () => {
+    // No `providerId` in its hello, and no answer to ours. The host therefore never
+    // upgrades past generated, which is exactly what that older build plays.
+    const joiner = joinerState(LIBRARY);
+    const [afterHello, out] = peerReduce(joiner, {
+      type: 'received',
+      message: { t: 'hello', protocol: PROTOCOL_VERSION, seed: 7, level: 3, rounds: 4 },
+    });
+    expect(afterHello.started).toBe(true);
+    expect(afterHello.providerId).toBe('generated');
+    expect(afterHello.mapsDiffer).toBe(true);
+    expect(out).toEqual([{ t: 'maps', providerId: LIBRARY }]);
+
+    const host = hostState({ seed: 7, level: 3, rounds: 4, providerId: LIBRARY });
+    expect(host.providerId).toBe('generated');
+  });
+
+  it('a repeated answer changes nothing', () => {
+    const g = new Game(3, 1, 5, [LIBRARY, LIBRARY]).flush({ duplicate: true });
+    expect(g.host.providerId).toBe(LIBRARY);
+    expect(g.host.mapsDiffer).toBe(false);
+  });
+
+  it('only the host reads an answer, and only a joiner reads hello', () => {
+    const g = new Game(3, 1, 5, [LIBRARY, LIBRARY]).flush();
+    const [joiner] = peerReduce(g.joiner, {
+      type: 'received',
+      message: { t: 'maps', providerId: 'library:someone-else' },
+    });
+    expect(joiner.providerId).toBe(LIBRARY);
+    const [host] = peerReduce(g.host, {
+      type: 'received',
+      message: { t: 'hello', protocol: PROTOCOL_VERSION, seed: 1, level: 1, rounds: 1 },
+    });
+    expect(host.seed).toBe(g.host.seed);
+  });
+
+  it('carries an id and never a map', () => {
+    // The privacy stance, as a test: what crosses the wire is a hash and a weight, and a
+    // library id is a list of content hashes. No geometry, ever.
+    const hello = helloFor(hostState({ seed: 1, level: 1, rounds: 1, providerId: LIBRARY }));
+    expect(JSON.stringify(hello)).toBe(
+      `{"t":"hello","protocol":${PROTOCOL_VERSION},"seed":1,"level":1,"rounds":1,"providerId":"${LIBRARY}"}`,
+    );
   });
 });
 

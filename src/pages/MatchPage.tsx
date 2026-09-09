@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'wouter';
 import { CardView } from '@/drills/dohledavka/Cards.tsx';
 import { dohledavka } from '@/drills/dohledavka/drill.ts';
+import { bundleUrl, loadLibrary } from '@/lib/maps/library.ts';
+import { bundlesFor, loadPolicy, providerFor } from '@/lib/maps/policy.ts';
 import { GeneratedProvider } from '@/lib/maps/provider.ts';
 import { deriveSeed, seeded } from '@/lib/rng.ts';
+import { idb } from '@/lib/store.ts';
 import { helloFor, hostState, joinerState, peerReduce, type PeerEvent, type PeerState } from '@/net/peer.ts';
 import { decode, encode, type Side } from '@/net/protocol.ts';
 import type { Transport } from '@/net/transport.ts';
@@ -19,11 +22,45 @@ type Mode = 'lobby' | 'split' | 'host' | 'join';
 export default function MatchPage() {
   const { code } = useParams<{ code?: string }>();
   const [mode, setMode] = useState<Mode>(code ? 'join' : 'lobby');
+  const providerId = useProviderId();
+  const leave = () => setMode('lobby');
 
-  if (mode === 'split') return <SplitMatch onLeave={() => setMode('lobby')} />;
-  if (mode === 'host') return <HostFlow onLeave={() => setMode('lobby')} />;
-  if (mode === 'join') return <JoinFlow offerCode={code} onLeave={() => setMode('lobby')} />;
+  if (mode === 'lobby') return <Lobby onPick={setMode} />;
+  // Which maps this device holds has to be known before the handshake, not during it: the
+  // id goes out in `hello`, and a game that started before it was read would announce the
+  // wrong one. It is one IndexedDB read for the default policy and nothing else.
+  if (providerId === null) return <Waiting note="Preparing…" />;
+  if (mode === 'split') return <SplitMatch providerId={providerId} onLeave={leave} />;
+  if (mode === 'host') return <HostFlow providerId={providerId} onLeave={leave} />;
+  return <JoinFlow providerId={providerId} offerCode={code} onLeave={leave} />;
+}
 
+/**
+ * This device's `MapProvider.id`, from its stored policy.
+ *
+ * Bundles are loaded because the id of a library is the content hashes of the maps in it —
+ * that is what makes "we hold the same maps" a comparison rather than a hope. Cache-first,
+ * and skipped outright for the default policy, so the common case touches no network at
+ * all. Dohledavka draws symbols and uses none of it; this is the groundwork §5.2 asks for.
+ */
+function useProviderId(): string | null {
+  const [id, setId] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const policy = await loadPolicy(idb);
+      const names = bundlesFor(policy);
+      const maps = names.length === 0 ? [] : await loadLibrary(names.map(bundleUrl), fetch, idb);
+      if (live) setId(providerFor(policy, maps).id);
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+  return id;
+}
+
+function Lobby({ onPick }: { onPick: (mode: Mode) => void }) {
   return (
     <div className="flex flex-col gap-3 pt-2">
       <h2 className="m-0 text-base font-semibold">Dohledavka &middot; two players</h2>
@@ -31,9 +68,9 @@ export default function MatchPage() {
         Both players see the same two cards. They share exactly one symbol &mdash; first to
         tap it takes the round.
       </p>
-      <Choice title="Same device" note="Phone flat on the table, one half each." onClick={() => setMode('split')} />
-      <Choice title="Host online" note="Send a link to the other player." onClick={() => setMode('host')} />
-      <Choice title="Join online" note="Open a link you were sent, or paste the code." onClick={() => setMode('join')} />
+      <Choice title="Same device" note="Phone flat on the table, one half each." onClick={() => onPick('split')} />
+      <Choice title="Host online" note="Send a link to the other player." onClick={() => onPick('host')} />
+      <Choice title="Join online" note="Open a link you were sent, or paste the code." onClick={() => onPick('join')} />
       <Link href="/" className="pt-2 text-center text-sm text-muted no-underline">Back</Link>
     </div>
   );
@@ -138,9 +175,17 @@ function Over({ state, youAre, onLeave }: { state: PeerState; youAre: Side | 'bo
 }
 
 /** Two players, one device. The same rules as online — the host simply awards both sides. */
-function SplitMatch({ onLeave }: { onLeave: () => void }) {
+function SplitMatch({ providerId, onLeave }: { providerId: string; onLeave: () => void }) {
   const [state, dispatch] = useMatch(
-    useMemo(() => hostState({ seed: (Math.random() * 0xffffffff) >>> 0, level: LEVEL, rounds: ROUNDS }), []),
+    // One device is trivially in agreement with itself, so nothing is compared here — but
+    // it carries its own id all the same, so that split screen and online build the same
+    // state from the same fields.
+    useMemo(
+      () => hostState({
+        seed: (Math.random() * 0xffffffff) >>> 0, level: LEVEL, rounds: ROUNDS, providerId,
+      }),
+      [providerId],
+    ),
     null,
   );
   const round = useRound(state);
@@ -208,6 +253,14 @@ function OnlineMatch({
   return (
     <div className="flex flex-1 flex-col gap-3">
       <Scoreboard state={state} youAre={youAre} />
+      {/* Said once, on the first round, because nothing after it changes: the two devices
+          hold different maps, so the match is on the one source both certainly have.
+          Dohledavka uses no map at all, so this is information and never an apology. */}
+      {state.mapsDiffer && state.round === 0 && (
+        <p className="m-0 text-center text-xs text-muted">
+          Your maps and theirs are not the same set, so this match uses generated ones.
+        </p>
+      )}
       <div className="flex flex-1 flex-col items-center justify-center gap-4">
         {round.cards.map((card, i) => (
           <CardView
@@ -293,7 +346,7 @@ function useLinkState(transport: Transport | null) {
   return linkState;
 }
 
-function HostFlow({ onLeave }: { onLeave: () => void }) {
+function HostFlow({ providerId, onLeave }: { providerId: string; onLeave: () => void }) {
   const [side, setSide] = useState<HostSide | null>(null);
   const [answer, setAnswer] = useState('');
   const [rejected, setRejected] = useState(false);
@@ -301,8 +354,8 @@ function HostFlow({ onLeave }: { onLeave: () => void }) {
   const [split, setSplit] = useState(false);
 
   const game = useMemo(
-    () => ({ seed: (Math.random() * 0xffffffff) >>> 0, level: LEVEL, rounds: ROUNDS }),
-    [],
+    () => ({ seed: (Math.random() * 0xffffffff) >>> 0, level: LEVEL, rounds: ROUNDS, providerId }),
+    [providerId],
   );
   const [state, dispatch] = useMatch(useMemo(() => hostState(game), [game]), side?.transport ?? null);
   const linkState = useLinkState(side?.transport ?? null);
@@ -331,7 +384,7 @@ function HostFlow({ onLeave }: { onLeave: () => void }) {
     return () => window.clearTimeout(id);
   }, [linkState, answer]);
 
-  if (split) return <SplitMatch onLeave={onLeave} />;
+  if (split) return <SplitMatch providerId={providerId} onLeave={onLeave} />;
   if (linkState === 'failed' || timedOut) {
     return <Failed onLeave={onLeave} onSplit={() => setSplit(true)} />;
   }
@@ -377,14 +430,23 @@ function HostFlow({ onLeave }: { onLeave: () => void }) {
   );
 }
 
-function JoinFlow({ offerCode, onLeave }: { offerCode: string | undefined; onLeave: () => void }) {
+function JoinFlow({
+  providerId, offerCode, onLeave,
+}: {
+  providerId: string;
+  offerCode: string | undefined;
+  onLeave: () => void;
+}) {
   const [typed, setTyped] = useState(offerCode ?? '');
   const [side, setSide] = useState<JoinerSide | null>(null);
   const [rejected, setRejected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [split, setSplit] = useState(false);
 
-  const [state, dispatch] = useMatch(useMemo(() => joinerState(), []), side?.transport ?? null);
+  const [state, dispatch] = useMatch(
+    useMemo(() => joinerState(providerId), [providerId]),
+    side?.transport ?? null,
+  );
   const linkState = useLinkState(side?.transport ?? null);
 
   const join = useCallback((code: string) => {
@@ -402,7 +464,7 @@ function JoinFlow({ offerCode, onLeave }: { offerCode: string | undefined; onLea
     if (offerCode) join(offerCode);
   }, [offerCode, join]);
 
-  if (split) return <SplitMatch onLeave={onLeave} />;
+  if (split) return <SplitMatch providerId={providerId} onLeave={onLeave} />;
   if (linkState === 'failed') return <Failed onLeave={onLeave} onSplit={() => setSplit(true)} />;
   if (linkState === 'open') {
     return <OnlineMatch state={state} dispatch={dispatch} youAre="joiner" onLeave={onLeave} />;
