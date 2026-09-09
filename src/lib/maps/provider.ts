@@ -164,6 +164,84 @@ export class LibraryProvider implements MapProvider {
   }
 }
 
+/** One source in a mix, and how much of the rounds it should get. */
+export interface MixPart {
+  readonly provider: MapProvider;
+  /**
+   * Relative, not a percentage: what matters is a part's share of the total, so `[7, 3]`
+   * and `[0.7, 0.3]` are one mix and have one id.
+   *
+   * **Zero is not absent.** A part at zero is never drawn, but it is still in the
+   * fall-through order below: "I want my rounds on real maps" is not "I would rather have
+   * no round at all than a generated one", and a library that cannot answer the contours
+   * drill has to be caught by something.
+   */
+  readonly weight: number;
+}
+
+/**
+ * Several sources, in proportion. The tier knob.
+ *
+ * 100% generated, 30% real, 100% real are all this one class with different weights, and
+ * nothing below it knows: the drill asks for ground and is handed some.
+ *
+ * Two things make it usable as the thing a policy builds:
+ *
+ *  - **It falls through.** A `LibraryProvider` declines what it cannot serve — the contours
+ *    drill on a raster-only library, a small library with no window scored for a 380 m
+ *    relief round — and a mix that then gave up would turn "30% real maps" into "70% of my
+ *    rounds, and an error screen for the rest". So a null moves on to the next part, in
+ *    order, wrapping; only when every part declines does the mix decline.
+ *  - **A forced choice is not a draw.** With one part at a positive weight there is nothing
+ *    to decide, so no number is drawn and the mix consumes the rng exactly as that provider
+ *    alone would — which is what makes a policy at 100% one source produce the very rounds
+ *    that source produces, rather than rounds shifted by one draw.
+ */
+export class MixedProvider implements MapProvider {
+  readonly id: string;
+  readonly parts: readonly MixPart[];
+
+  constructor(parts: readonly MixPart[]) {
+    if (parts.length === 0) throw new RangeError('MixedProvider needs at least one source');
+    this.parts = parts;
+    const total = parts.reduce((sum, p) => sum + Math.max(0, p.weight), 0);
+    // The share, not the number that was passed, so one mix has one id. Two decimals is
+    // the resolution the settings screen offers (10% steps), and trailing zeros go so that
+    // 0.7 reads as 0.7. Order is part of the id because it is part of the behaviour: the
+    // parts are tried in it. That is the opposite of `LibraryProvider`, which sorts.
+    const share = (weight: number) =>
+      total > 0 ? String(Number((Math.max(0, weight) / total).toFixed(2))) : '0';
+    this.id = `mixed:${parts.map((p) => `${share(p.weight)}*${p.provider.id}`).join('+')}`;
+  }
+
+  pick(rng: Rng, requirement: WindowRequirement): { map: OMap; crop: Crop } | null {
+    const start = this.draw(rng);
+    for (let step = 0; step < this.parts.length; step++) {
+      const picked = this.parts[(start + step) % this.parts.length]!.provider.pick(rng, requirement);
+      if (picked) return picked;
+    }
+    return null;
+  }
+
+  /** Which part goes first. One draw, or none when there is nothing to decide. */
+  private draw(rng: Rng): number {
+    const weights = this.parts.map((p) => Math.max(0, p.weight));
+    const total = weights.reduce((sum, w) => sum + w, 0);
+    const drawable = weights.filter((w) => w > 0).length;
+    // Nothing to decide: one source can be drawn, or none can, and either way the answer
+    // does not depend on chance. Drawing anyway would move every round after it.
+    if (drawable <= 1) return total > 0 ? weights.findIndex((w) => w > 0) : 0;
+    let ticket = rng.range(0, total);
+    for (let i = 0; i < weights.length; i++) {
+      ticket -= weights[i]!;
+      // A float sum can leave the last ticket a hair over the total, so the last positive
+      // weight is the answer for anything that falls off the end.
+      if (ticket < 0 && weights[i]! > 0) return i;
+    }
+    return weights.findLastIndex((w) => w > 0);
+  }
+}
+
 /** A requirement, back into the numbers the generator takes. */
 export function terrainParamsFor(requirement: WindowRequirement): TerrainParams {
   const wanted = requirement.minFeatures;
