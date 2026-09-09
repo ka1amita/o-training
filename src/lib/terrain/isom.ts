@@ -58,6 +58,161 @@ export const GREEN_SCREEN = { slow: 0.3, walk: 0.5, fight: 0.7 } as const;
 /** 401 open land is full yellow; 403 rough open is a screen of it. */
 export const YELLOW_SCREEN = { open: 1, rough: 0.5 } as const;
 
+// ---------------------------------------------------------------------------------------
+// The colour classes a scanned map is read back into
+// ---------------------------------------------------------------------------------------
+
+/**
+ * What a pixel of an ISOM map can be, §1.3 of the design note.
+ *
+ * A raster export is pixels and only pixels, but ISOM colours are *designed* to be
+ * separable — that is what makes a map readable at a run — so a pixel can be put back
+ * into the class the cartographer inked it in. That mask is the whole of what the app
+ * knows about an image-only map: where the ground is runnable, where the relief detail
+ * is, where a control could sit, whether an edit is plausible.
+ *
+ * The table lives **here**, beside `COLOUR`, `GREEN_SCREEN` and `YELLOW_SCREEN`, and is
+ * computed from them rather than restated: the screens are what the renderer paints, so
+ * classifying against anything else would mean the app could not read back its own
+ * drawing. The synthetic fixture in `maps/import/raster.test.ts` depends on exactly that.
+ *
+ * `unknown` is first, so that a zero byte in a mask — a mask that was truncated, or a
+ * transparent pixel — reads as "nothing is claimed here" rather than as white forest.
+ */
+export const MASK_CLASSES = [
+  'unknown',
+  'white',
+  'brown',
+  'blue',
+  'green-light',
+  'green-mid',
+  'green-dark',
+  'yellow',
+  'yellow-light',
+  'black',
+  'grey',
+  'purple',
+] as const;
+
+export type ColourClass = (typeof MASK_CLASSES)[number];
+
+/** A class's byte in the mask. `MASK_CLASSES[MASK.brown] === 'brown'`. */
+export const MASK: Readonly<Record<ColourClass, number>> = Object.fromEntries(
+  MASK_CLASSES.map((name, index) => [name, index]),
+) as Record<ColourClass, number>;
+
+/** A screen of ink over white paper, which is what a percentage of a colour prints as. */
+const screen = (hex: string, alpha: number): readonly [number, number, number] => {
+  const n = parseInt(hex.slice(1), 16);
+  return [
+    Math.round(((n >> 16) & 255) * alpha + 255 * (1 - alpha)),
+    Math.round(((n >> 8) & 255) * alpha + 255 * (1 - alpha)),
+    Math.round((n & 255) * alpha + 255 * (1 - alpha)),
+  ];
+};
+
+/**
+ * The colour each class is printed in — the value a pixel is matched against, and the
+ * value the renderer paints with when an edit has to cover part of the image.
+ *
+ * `unknown` is the ground colour: a patch painted in it is at worst white forest, which
+ * is the one thing on an O map that means "nothing here".
+ */
+export const CLASS_RGB: Readonly<Record<ColourClass, readonly [number, number, number]>> = {
+  unknown: screen(COLOUR.ground, 1),
+  white: screen(COLOUR.ground, 1),
+  brown: screen(COLOUR.brown, 1),
+  blue: screen(COLOUR.blue, 1),
+  'green-light': screen(COLOUR.green, GREEN_SCREEN.slow),
+  'green-mid': screen(COLOUR.green, GREEN_SCREEN.walk),
+  'green-dark': screen(COLOUR.green, GREEN_SCREEN.fight),
+  yellow: screen(COLOUR.yellow, YELLOW_SCREEN.open),
+  'yellow-light': screen(COLOUR.yellow, YELLOW_SCREEN.rough),
+  black: screen(COLOUR.black, 1),
+  grey: screen(COLOUR.grey, 1),
+  purple: screen(COLOUR.purple, 1),
+};
+
+/** The same, as CSS, for the renderer. */
+export const CLASS_CSS: Readonly<Record<ColourClass, string>> = Object.fromEntries(
+  MASK_CLASSES.map((name) => {
+    const [r, g, b] = CLASS_RGB[name];
+    return [name, `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`];
+  }),
+) as Record<ColourClass, string>;
+
+/**
+ * How runnable each class is, 1 = white forest, 0 = impassable.
+ *
+ * The mask's answer to the question `Semantics.runnability` answers for a vector feature,
+ * and it is the same scale so that a window score means the same thing on both. Black is
+ * ink and not ground — a path, a building, a boulder, a contour's own tag — so it is read
+ * as ordinary forest rather than as a wall: guessing "impassable" from black would make
+ * every path on the map a barrier.
+ */
+export const CLASS_RUNNABILITY: Readonly<Record<ColourClass, number>> = {
+  unknown: 1,
+  white: 1,
+  brown: 1,
+  blue: 0.3,
+  'green-light': 0.6,
+  'green-mid': 0.4,
+  'green-dark': 0.15,
+  yellow: 1,
+  'yellow-light': 0.9,
+  black: 1,
+  grey: 0.8,
+  purple: 1,
+};
+
+/**
+ * Perceptual weights for the nearest-colour match.
+ *
+ * Plain Euclidean RGB puts ISOM's green 50% and its green 70% closer together than the
+ * eye does and, worse, drags anti-aliased brown-on-white toward grey. Weighting green
+ * highest and red above blue is the cheap approximation everyone uses; it is enough here
+ * because the classes are separated by design, and the failures it does have — a pixel
+ * halfway between two greens — are answered by the majority filter when the mask is
+ * built, not by a better metric.
+ */
+const WEIGHT = { r: 2, g: 4, b: 3 } as const;
+
+/**
+ * How far a pixel may be from every class and still be one of them.
+ *
+ * Squared weighted distance. Used only to answer "is this an ISOM colour at all", which
+ * is what tells a Livelox header bar from the map under it; classification itself never
+ * refuses, because a nearest class is always more useful than a hole in the mask.
+ */
+export const CLASS_TOLERANCE = 9 * 44 * 44;
+
+const CLASSIFIABLE: readonly ColourClass[] = MASK_CLASSES.filter((c) => c !== 'unknown');
+
+/** The class a pixel is nearest to, as its mask byte, and how far away it was. */
+export function nearestClass(r: number, g: number, b: number): {
+  readonly klass: number;
+  readonly distance: number;
+} {
+  let best = MASK.white;
+  let bestDistance = Infinity;
+  for (const name of CLASSIFIABLE) {
+    const [cr, cg, cb] = CLASS_RGB[name];
+    const distance =
+      WEIGHT.r * (r - cr) * (r - cr) +
+      WEIGHT.g * (g - cg) * (g - cg) +
+      WEIGHT.b * (b - cb) * (b - cb);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = MASK[name];
+    }
+  }
+  return { klass: best, distance: bestDistance };
+}
+
+/** Whether a colour is ink an O map actually uses. A banner's grey-blue chrome is not. */
+export const looksIsom = (r: number, g: number, b: number): boolean =>
+  nearestClass(r, g, b).distance <= CLASS_TOLERANCE;
+
 export const CONTOUR = {
   /** 101 */ width: mm(0.14),
   /** 102, every fifth line */ indexWidth: mm(0.25),

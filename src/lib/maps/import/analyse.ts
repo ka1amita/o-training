@@ -6,6 +6,7 @@ import {
 import { semanticsOf } from '@/lib/terrain/semantics.ts';
 import { readGround } from '@/lib/terrain/terrain.ts';
 import { requirementId, type WindowRequirement } from '../provider.ts';
+import { rasterAnalysis } from './raster.ts';
 
 /**
  * Stage four: what a map can answer about itself without being re-read.
@@ -62,11 +63,29 @@ export const RUNNABILITY_GRID = 48;
 export function analyse(map: OMap): Analysis {
   const ground = map.relief.kind === 'none' ? null : readGround(map.relief);
   const size = Math.max(map.width, map.height);
+  /**
+   * The mask answers for a map that has no features to ask.
+   *
+   * Only then: a vectorised map's own symbols are a better answer to every one of these
+   * questions than a blob filter is, and two answers to one question are two places for
+   * it to be wrong — a boulder would be both a `Feature` and a blob, and a window would
+   * count it twice.
+   */
+  const fromMask = map.raster && map.features.length === 0
+    ? rasterAnalysis(map.raster, size, RUNNABILITY_GRID)
+    : null;
   return {
     landforms: ground ? landformsOf(ground.grid, size, drawnExtent(map)) : [],
     barriers: map.features.filter((f) => semanticsOf(f.code)?.barrier).map((f) => f.id),
-    runnability: runnabilityOf(map, size),
+    runnability: fromMask ? fromMask.runnability : runnabilityOf(map, size),
     runnabilityGrid: RUNNABILITY_GRID,
+    ...(fromMask
+      ? {
+          controlSites: fromMask.controlSites,
+          moveable: fromMask.moveable,
+          brown: fromMask.brown,
+        }
+      : {}),
   };
 }
 
@@ -269,6 +288,10 @@ function insidePolygon(p: Vec, feature: Feature): boolean {
  */
 const WINDOW_STRIDE = 0.25;
 
+/** The share of contour ink a window is scored as fully detailed at. Eyeballed against
+ *  the mask of a 1:10000 forest map, where a busy hillside runs about a tenth brown. */
+const DETAIL_TARGET = 0.1;
+
 /** How many windows per requirement a bundle carries. */
 export const WINDOWS_KEPT = 32;
 
@@ -355,6 +378,14 @@ function scoreWindow(
     features++;
     if (semanticsOf(feature.code)?.controlSite) controlSites++;
   }
+  // A raster-only map has no features at all, and its blobs are what its windows hold.
+  // Filled only when `map.features` is empty (see `analyse`), so nothing is counted twice.
+  for (const blob of analysis.moveable ?? []) {
+    if (insideCrop(positionOf(blob), crop)) features++;
+  }
+  for (const site of analysis.controlSites ?? []) {
+    if (insideCrop(site, crop)) controlSites++;
+  }
 
   let low = Infinity;
   let high = -Infinity;
@@ -375,14 +406,17 @@ function scoreWindow(
   const step = size / cells;
   let covered = 0;
   let counted = 0;
+  let brown = 0;
   for (let j = Math.floor(crop.y / step); j <= Math.floor((crop.y + crop.size) / step); j++) {
     for (let i = Math.floor(crop.x / step); i <= Math.floor((crop.x + crop.size) / step); i++) {
       if (i < 0 || j < 0 || i >= cells || j >= cells) continue;
       counted++;
       if (analysis.runnability[j * cells + i]! < 1) covered++;
+      brown += analysis.brown?.[j * cells + i] ?? 0;
     }
   }
   const cover = counted > 0 ? covered / counted : 0;
+  const detail = counted > 0 ? brown / counted : 0;
 
   // A window that cannot answer the question at all scores zero and is dropped, rather
   // than scoring badly and being picked when nothing better exists. A contours round on
@@ -426,6 +460,11 @@ function scoreWindow(
   if (wantsRelief) score += Math.min(1, landforms / 3);
   // Not one flat green wash, and not a bare white field either.
   score += 1 - Math.abs(cover - 0.35) * 2;
+  // A raster map's only word about relief. It cannot make a window answer the contours
+  // drill — `needsRelief` is refused above, and brown ink is not a height field — but
+  // between two windows a pexeso card is better on the one with contours in it. Zero on
+  // every vector map, so no bundle already written moves.
+  if (analysis.brown) score += Math.min(1, detail / DETAIL_TARGET);
 
   return { crop, reliefRange, features, controlSites, landforms, cover, score };
 }

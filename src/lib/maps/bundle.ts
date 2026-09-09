@@ -1,10 +1,12 @@
 import type { Contour, SlopeTag } from '@/lib/terrain/contours.ts';
 import type { Grid } from '@/lib/terrain/height.ts';
-import type { Crop, Feature, MapAnalysis, MapMeta, OMap, Vec } from '@/lib/terrain/omap.ts';
+import type {
+  Crop, Feature, MapAnalysis, MapMeta, OMap, RasterLayer, Vec,
+} from '@/lib/terrain/omap.ts';
 import {
   ContourRelief, GridRelief, NoRelief, type Relief,
 } from '@/lib/terrain/relief.ts';
-import { decodeFloats, encodeFloats, sha256 } from './codec.ts';
+import { decodeFloats, encodeFloats, fromBase64, sha256, toBase64 } from './codec.ts';
 
 /**
  * One normalised document per imported map, §4.1 of the design note.
@@ -33,7 +35,7 @@ export interface MapBundle {
   readonly height: number;
   readonly features: readonly Feature[];
   readonly relief: BundleRelief;
-  /** Step 5. Declared so the format has a place for it; the pipeline does not fill it. */
+  /** The image tier, §2.2. Absent on a map that came from a drawing rather than a picture. */
   readonly raster?: BundleRaster;
   readonly analysis: MapAnalysis;
   /** Keyed by `WindowRequirement.id` — what `LibraryProvider.pick` chooses from. */
@@ -64,15 +66,31 @@ export interface BundleContour {
   readonly tags: string;
 }
 
-/** §2.2, shaped now and filled by step 5. Nothing in the app reads it yet. */
+/**
+ * §2.2: the picture, and the mask read off it.
+ *
+ * The image is a **`data:` URL or a path beside the bundle**, and the pipeline writes the
+ * path: a 2 MB PNG inlined as base64 is 2.7 MB of JSON that has to be parsed before the
+ * first round can be generated, on a phone, for a picture the browser would have decoded
+ * off disk in a frame. `loadBundle` accepts either and resolves a relative path against
+ * the URL the bundle came from.
+ *
+ * The mask is base64 bytes through `codec.ts`, one class per cell — small enough to sit
+ * in the JSON (a 300 m map at a metre is 90 kB) and useless as a file on its own.
+ */
 export interface BundleRaster {
-  /** data: URL or a path beside the bundle. */
-  readonly png: string;
+  /** `data:` URL, or a path relative to the bundle. */
+  readonly image: string;
+  readonly imageWidth: number;
+  readonly imageHeight: number;
   readonly metresPerPixel: number;
-  /** base64 bytes, one ISOM colour class per pixel. */
+  readonly originX: number;
+  readonly originY: number;
+  /** base64 bytes, one ISOM colour class per cell. */
   readonly mask: string;
   readonly maskWidth: number;
   readonly maskHeight: number;
+  readonly metresPerCell: number;
 }
 
 /**
@@ -86,7 +104,20 @@ export interface BundleRaster {
  */
 const square = (bundle: MapBundle): number => Math.max(bundle.width, bundle.height);
 
-export function loadBundle(json: unknown): OMap {
+export interface LoadOptions {
+  /**
+   * Where the bundle came from, so a relative image path can be resolved.
+   *
+   * A bundle names its picture as a sibling — `forest.png` beside `forest.json` — because
+   * the two are written together and move together. Without the URL there is nothing to
+   * resolve against, so a bundle loaded from a string keeps the path as written and the
+   * `<image>` resolves against the page instead, which is right for the dev server and
+   * wrong for a project site under a base path.
+   */
+  readonly url?: string;
+}
+
+export function loadBundle(json: unknown, options: LoadOptions = {}): OMap {
   const bundle = validate(json);
   return {
     id: bundle.id,
@@ -95,10 +126,39 @@ export function loadBundle(json: unknown): OMap {
     scale: bundle.meta.scale,
     relief: reliefOf(bundle),
     features: bundle.features,
+    ...(bundle.raster ? { raster: rasterOf(bundle.raster, options.url) } : {}),
     analysis: bundle.analysis,
     meta: bundle.meta,
     windows: bundle.windows,
   };
+}
+
+function rasterOf(raster: BundleRaster, url?: string): RasterLayer {
+  const mask = fromBase64(raster.mask);
+  if (mask.length !== raster.maskWidth * raster.maskHeight) {
+    throw new Error(
+      `bundle: mask says ${raster.maskWidth}x${raster.maskHeight} and carries ${mask.length} cells`,
+    );
+  }
+  return {
+    image: resolveImage(raster.image, url),
+    imageWidth: raster.imageWidth,
+    imageHeight: raster.imageHeight,
+    metresPerPixel: raster.metresPerPixel,
+    originX: raster.originX,
+    originY: raster.originY,
+    mask,
+    maskWidth: raster.maskWidth,
+    maskHeight: raster.maskHeight,
+    metresPerCell: raster.metresPerCell,
+  };
+}
+
+/** A sibling path against the bundle's own URL; anything absolute is left alone. */
+function resolveImage(image: string, url?: string): string {
+  if (!url) return image;
+  if (/^(data:|blob:|https?:|\/)/.test(image)) return image;
+  return `${url.slice(0, url.lastIndexOf('/') + 1)}${image}`;
 }
 
 function reliefOf(bundle: MapBundle): Relief {
@@ -171,6 +231,10 @@ export function saveBundle(map: OMap): MapBundle {
     height: map.height,
     features: map.features,
     relief: reliefFrom(map.relief),
+    // Conditional, and in this position: the field order *is* the hash, so a map with no
+    // picture has to serialise exactly as it did before the raster tier existed or every
+    // bundle already written changes its id.
+    ...(map.raster ? { raster: rasterFrom(map.raster) } : {}),
     analysis: map.analysis,
     windows: map.windows ?? {},
   };
@@ -196,6 +260,28 @@ function reliefFrom(relief: Relief): BundleRelief {
     throw new Error(`bundle: a ${relief.kind} relief has no bundle form`);
   }
   return { kind: 'none' };
+}
+
+/**
+ * The layer, back into the document.
+ *
+ * `patches` and `warps` are **not** written: they are what an edit left for the renderer
+ * to paint, they belong to one variant of one round, and a bundle is the map before any
+ * round was generated. Writing them would bake a distractor into the library.
+ */
+function rasterFrom(raster: RasterLayer): BundleRaster {
+  return {
+    image: raster.image,
+    imageWidth: raster.imageWidth,
+    imageHeight: raster.imageHeight,
+    metresPerPixel: raster.metresPerPixel,
+    originX: raster.originX,
+    originY: raster.originY,
+    mask: toBase64(raster.mask),
+    maskWidth: raster.maskWidth,
+    maskHeight: raster.maskHeight,
+    metresPerCell: raster.metresPerCell,
+  };
 }
 
 function contourTo(line: Contour): BundleContour {
@@ -246,6 +332,18 @@ function validate(json: unknown): MapBundle {
     throw new Error('bundle: no analysis');
   }
   if (!bundle.windows || typeof bundle.windows !== 'object') throw new Error('bundle: no windows');
+  const raster = bundle.raster;
+  if (raster) {
+    if (typeof raster.image !== 'string' || raster.image.length === 0) {
+      throw new Error('bundle: a raster with no image');
+    }
+    if (!(raster.metresPerPixel > 0) || !(raster.metresPerCell > 0)) {
+      throw new Error('bundle: a raster with no scale');
+    }
+    if (!(raster.maskWidth > 0) || !(raster.maskHeight > 0) || typeof raster.mask !== 'string') {
+      throw new Error('bundle: a raster with no mask');
+    }
+  }
   return bundle;
 }
 

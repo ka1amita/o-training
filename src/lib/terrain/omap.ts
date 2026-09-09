@@ -1,4 +1,4 @@
-import type { Relief } from './relief.ts';
+import type { Relief, Warp } from './relief.ts';
 import type { Colour, IsomCode } from './semantics.ts';
 
 /**
@@ -119,14 +119,58 @@ export interface Feature {
   readonly colour?: Colour;
 }
 
-/** The image source, §2.2 of the design note. Shaped now, filled in step 5. */
+/**
+ * The image source, §2.2 of the design note.
+ *
+ * A picture of a map, plus the one thing that makes a picture readable to the app: a
+ * **colour mask**, one ISOM class per cell at about a metre, from `maps/import/raster.ts`.
+ * An image-only map has no features and no heights, and the mask is the whole of what is
+ * known about it — where the ground is runnable, where a control could sit, whether an
+ * edit is plausible.
+ *
+ * `image` is a URL and not an `ImageBitmap` as §2.2 sketched: the renderer is SVG, an
+ * `<image href>` takes a URL, and an `ImageBitmap` would need a canvas to get back out of.
+ * It is either a `data:` URL or a path resolved against the bundle it came from — a
+ * sibling PNG under `public/maps/`, so a 2 MB picture does not sit inside a JSON document
+ * that has to be parsed before the first round.
+ *
+ * `patches` and `warps` are **edits, as the renderer has to paint them**. Nothing that
+ * scores or validates a round may read them: the answer comes from the `Edit` list, and
+ * these are what `applyEdits` leaves behind so that the picture agrees with it.
+ */
 export interface RasterLayer {
-  readonly image: ImageBitmap | string;
+  /** `data:` URL, or a path relative to the bundle. Resolved by `loadBundle`. */
+  readonly image: string;
+  readonly imageWidth: number;
+  readonly imageHeight: number;
   readonly metresPerPixel: number;
-  /** Per-pixel ISOM colour class at reduced resolution, from the pipeline. */
+  /** Map metres of the image's top-left corner: an image may outrun the map's extent. */
+  readonly originX: number;
+  readonly originY: number;
+  /** One ISOM colour class per cell — `MASK` in `isom.ts` — row-major from the origin. */
   readonly mask: Uint8Array;
   readonly maskWidth: number;
   readonly maskHeight: number;
+  readonly metresPerCell: number;
+  /** Where an edit cut something out of the picture, and what to paint over it. */
+  readonly patches?: readonly RasterPatch[];
+  /** Warps the picture has been through, for the renderer to resample it by. */
+  readonly warps?: readonly Warp[];
+}
+
+/**
+ * A disc of the image, painted out in a flat colour.
+ *
+ * A moved blob is a cut and paste: the symbol is drawn again at its new place from the
+ * style table, and the pixels it came from are covered with what surrounds them — white
+ * forest under a boulder, which is what a surveyor would have drawn had the boulder never
+ * been there. `fill` is a `MASK` class, so the renderer and the mask agree by
+ * construction rather than by a second table of colours.
+ */
+export interface RasterPatch {
+  readonly at: Vec;
+  readonly radius: number;
+  readonly fill: number;
 }
 
 /**
@@ -142,6 +186,31 @@ export interface MapAnalysis {
     readonly radius: number;
     readonly amplitude: number;
   }[];
+  /**
+   * Where a control could sit on a map that has no features to sit on — the raster tier.
+   *
+   * Filled only for an image-only map: a map with vector features already answers this
+   * from the semantic table, and two answers would be two places for it to be wrong.
+   */
+  readonly controlSites?: readonly Vec[];
+  /**
+   * Blobs an edit may move, as `Feature`s that are deliberately **not** in `features`.
+   *
+   * The picture already draws them; putting them in `features` would draw every boulder
+   * twice, once as ink and once as a symbol. They live here, `proposeEdit` offers them,
+   * and `applyEdits` materialises a move as a patch over the pixels plus the symbol drawn
+   * again at its new place.
+   */
+  readonly moveable?: readonly Feature[];
+  /**
+   * Contour ink per coarse cell, 0 to 1: the raster tier's only word about relief.
+   *
+   * A proxy for relief *detail*, never for height. A map with brown all over it still has
+   * `relief: none` and the contours drill still declines it — there is no height field to
+   * be had from a picture of contour lines without tracing them, which is an offline job
+   * with different tools (§1.3).
+   */
+  readonly brown?: readonly number[];
 }
 
 export const pointsOf = (map: OMap): readonly Feature[] =>
