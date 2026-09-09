@@ -1,5 +1,5 @@
 import type { Relief } from './relief.ts';
-import type { IsomCode } from './semantics.ts';
+import type { Colour, IsomCode } from './semantics.ts';
 
 /**
  * A map, whatever drew it.
@@ -108,6 +108,15 @@ export interface Feature {
   /** Point features: drawn size in metres. */
   readonly size?: number;
   readonly shape?: AreaShape;
+  /**
+   * The colour class the source inked it in, for a code `semantics.ts` does not know.
+   *
+   * Absent on a generated feature, whose code is always in the table. It travels with the
+   * feature rather than sitting in a per-map table because it is what makes an unknown
+   * symbol drawable at all, and a feature that reached the renderer without its map would
+   * otherwise be invisible.
+   */
+  readonly colour?: Colour;
 }
 
 /** The image source, §2.2 of the design note. Shaped now, filled in step 5. */

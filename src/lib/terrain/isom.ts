@@ -195,6 +195,62 @@ export const SYMBOL: Readonly<Record<IsomCode, SymbolStyle>> = {
     geometry: 'point', shape: 'cliff', colour: COLOUR.black,
     radius: POINT.cliffWidth, width: POINT.cliffTagWidth,
   },
+
+  // Codes an imported map brought with it, where the colour fallback would draw them
+  // wrongly rather than merely plainly. The rest fall back, and this list grows a row at
+  // a time, checked by eye on `#/dev/maps` — which is the existing practice and the only
+  // one that scales to 120 symbols.
+
+  /** 405 forest, easy running: white, and **opaque**. It is the ground, not a wash over it. */
+  '405': { geometry: 'area', fill: COLOUR.ground, opacity: 1 },
+  /** 407, 409 undergrowth: the green scale between 406 and 410. */
+  '407': { geometry: 'area', fill: COLOUR.green, opacity: 0.4 },
+  '409': { geometry: 'area', fill: COLOUR.green, opacity: 0.6 },
+  '411': { geometry: 'area', fill: COLOUR.green, opacity: 0.4 },
+  '415': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough },
+  '404': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough },
+  '402': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.open },
+  /** 526 building: solid, because a building is the one thing on a map you cannot run through. */
+  '526': { geometry: 'area', fill: COLOUR.black, opacity: 1 },
+  '527': { geometry: 'area', fill: COLOUR.yellow, opacity: 0.35 },
+  '529': { geometry: 'area', fill: COLOUR.grey, opacity: 0.35 },
+  '202': { geometry: 'area', fill: COLOUR.black, opacity: 0.55 },
+  '210.1': { geometry: 'area', fill: COLOUR.grey, opacity: 0.6 },
+  '310': { geometry: 'area', pattern: 'marsh' },
+  '309': { geometry: 'area', pattern: 'marsh' },
+  '301': { geometry: 'area', fill: COLOUR.blue, opacity: 1 },
+  '302': { geometry: 'area', fill: COLOUR.blue, opacity: 1 },
+  '211': { geometry: 'area', fill: COLOUR.yellow, opacity: 0.3 },
+
+  // Roads and paths, thickest first. A path drawn at the same weight as the contour it
+  // crosses is the wrongness that reads as "generated" without being nameable.
+  '502': { geometry: 'line', stroke: COLOUR.black, width: mm(0.7) },
+  '503': { geometry: 'line', stroke: COLOUR.black, width: mm(0.5) },
+  '504': { geometry: 'line', stroke: COLOUR.black, width: mm(0.35) },
+  '506': { geometry: 'line', stroke: COLOUR.black, width: LINE.pathWidth, dash: LINE.pathDash },
+  '507': { geometry: 'line', stroke: COLOUR.black, width: mm(0.2), dash: LINE.pathDash },
+  '509': {
+    geometry: 'line',
+    stroke: COLOUR.black,
+    width: LINE.rideWidth,
+    dash: LINE.rideDash,
+    casing: { stroke: COLOUR.ground, width: LINE.rideBackground },
+  },
+  /** 201 impassable cliff: heavy, and the barrier the semantic table says it is. */
+  '201': { geometry: 'line', stroke: COLOUR.black, width: mm(0.35) },
+  '305': { geometry: 'line', stroke: COLOUR.blue, width: LINE.streamWidth },
+  '308': { geometry: 'line', stroke: COLOUR.blue, width: mm(0.25) },
+  '106': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.25) },
+  '107': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.25) },
+  '109': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.25) },
+  '110': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.14) },
+  '414': { geometry: 'line', stroke: COLOUR.black, width: mm(0.14), dash: [mm(1.5), mm(0.4)] },
+  '416': { geometry: 'line', stroke: COLOUR.green, width: mm(0.25), dash: [mm(1.5), mm(0.4)] },
+  '115': { geometry: 'point', shape: 'triangle', colour: COLOUR.brown, radius: POINT.pitRadius },
+  '419': {
+    geometry: 'point', shape: 'ring', colour: COLOUR.green,
+    radius: POINT.treeRadius, width: POINT.treeWidth,
+  },
 };
 
 const PLAIN: Readonly<Record<Colour, string>> = {
@@ -211,19 +267,33 @@ const PLAIN: Readonly<Record<Colour, string>> = {
 };
 
 /**
+ * What the source knew about a symbol this table does not.
+ *
+ * An imported feature carries the colour class its own map inked it in, and that is the
+ * last resort: a code in neither table still draws, plainly, in the right colour. Without
+ * it the only honest thing left is to draw nothing, and a map with a tenth of its symbols
+ * missing is worse than one with a tenth of them drawn plainly.
+ */
+export interface StyleFallback {
+  readonly colour?: Colour;
+  readonly geometry?: 'point' | 'line' | 'area';
+}
+
+/**
  * The style for a code, or the plainest symbol of its colour class.
  *
- * An unknown code is not an error: ~120 symbols exist and sixteen are drawn here, so a
- * real map will arrive full of them. Drawing one plainly is what makes a map readable
- * from day one; fidelity then grows a row at a time, checked by eye on `#/dev/maps`.
+ * An unknown code is not an error: ~120 symbols exist and a few dozen are drawn here, so
+ * a real map will arrive with some. Drawing one plainly is what makes a map readable from
+ * day one; fidelity then grows a row at a time, checked by eye on `#/dev/maps`.
  */
-export function styleFor(code: IsomCode): SymbolStyle | undefined {
+export function styleFor(code: IsomCode, fallback?: StyleFallback): SymbolStyle | undefined {
   const known = SYMBOL[code];
   if (known) return known;
   const semantics = semanticsOf(code);
-  if (!semantics) return undefined;
-  const colour = PLAIN[semantics.colour];
-  if (semantics.geometry === 'area') return { geometry: 'area', fill: colour, opacity: 0.5 };
-  if (semantics.geometry === 'line') return { geometry: 'line', stroke: colour, width: mm(0.14) };
+  const geometry = semantics?.geometry ?? fallback?.geometry;
+  const colour = PLAIN[semantics?.colour ?? fallback?.colour ?? 'black'];
+  if (!geometry) return undefined;
+  if (geometry === 'area') return { geometry: 'area', fill: colour, opacity: 0.5 };
+  if (geometry === 'line') return { geometry: 'line', stroke: colour, width: mm(0.14) };
   return { geometry: 'point', shape: 'disc', colour, radius: mm(0.25) };
 }

@@ -205,16 +205,18 @@ function ContourPath({ contour, unit }: { contour: Contour; unit: number }) {
 }
 
 /**
- * One path per **code**, not one per feature.
+ * One path per **symbol**, not one per feature.
  *
  * Vegetation is generated as overlapping lobes so a green reads as one sprawling region,
  * and drawn as separate translucent shapes those overlaps composite twice — every chain
- * showed its own construction as a string of darker lenses. Collecting a code's outlines
- * into a single path makes the overlap a union: one fill, one opacity applied once. It
- * also emits one element where there were five.
+ * showed its own construction as a string of darker lenses. Collecting a symbol's
+ * outlines into a single path makes the overlap a union: one fill, one opacity applied
+ * once. It also emits one element where there were five.
  *
  * Keyed by code rather than by the generator's `kind`, for the same reason the style table
  * is: an imported 406 and a generated `slow` are one symbol and have to composite as one.
+ * The colour rides along in the key because it is what an *unknown* code is drawn in, and
+ * two symbols a map inked differently are two symbols however little the table knows.
  *
  * Order is the ISOM drawing order, so a marsh reads over the vegetation it sits in rather
  * than under whichever patch happened to be generated last. A code the list does not name
@@ -224,35 +226,43 @@ function ContourPath({ contour, unit }: { contour: Contour; unit: number }) {
 const AREA_ORDER: readonly IsomCode[] = ['401', '403', '406', '408', '410', '212', '311'];
 
 function Areas({ areas, marshId }: { areas: readonly Feature[]; marshId: string }) {
-  const byCode = new Map<IsomCode, Feature[]>();
+  const groups = new Map<string, Feature[]>();
   for (const area of areas) {
-    const alike = byCode.get(area.code);
+    const key = `${area.code}\u0000${area.colour ?? ''}`;
+    const alike = groups.get(key);
     if (alike) alike.push(area);
-    else byCode.set(area.code, [area]);
+    else groups.set(key, [area]);
   }
-  const codes = [
-    ...AREA_ORDER.filter((code) => byCode.has(code)),
-    ...[...byCode.keys()].filter((code) => !AREA_ORDER.includes(code)),
-  ];
+  const keys = [...groups.keys()];
+  const rank = (key: string) => {
+    const at = AREA_ORDER.indexOf(groups.get(key)![0]!.code);
+    return at < 0 ? AREA_ORDER.length : at;
+  };
+  // A stable sort, so two unknown codes keep the order the map gave them.
+  keys.sort((a, b) => rank(a) - rank(b));
 
   return (
     <>
-      {codes.map((code) => {
-        const style = styleFor(code);
+      {keys.map((key) => {
+        const alike = groups.get(key)!;
+        const first = alike[0]!;
+        const style = styleFor(first.code, {
+          ...(first.colour ? { colour: first.colour } : {}),
+          geometry: 'area',
+        });
         if (style?.geometry !== 'area') return null;
         // Holes are filled evenodd, so an imported polygon with rings inside it draws as
-        // one. Two features of a kind still union, because they do not nest.
-        const d = byCode
-          .get(code)!
+        // one. Two features of a symbol still union, because they do not nest.
+        const d = alike
           .flatMap((a) => (a.geometry.kind === 'polygon' ? a.geometry.rings : []))
           .map((ring) => path(ring, true))
           .join('');
         if (d === '') return null;
         if (style.pattern === 'marsh') {
-          return <path key={code} d={d} fill={`url(#${marshId})`} fillRule="evenodd" />;
+          return <path key={key} d={d} fill={`url(#${marshId})`} fillRule="evenodd" />;
         }
         return (
-          <path key={code} d={d} fill={style.fill} opacity={style.opacity} fillRule="evenodd" />
+          <path key={key} d={d} fill={style.fill} opacity={style.opacity} fillRule="evenodd" />
         );
       })}
     </>
@@ -260,7 +270,7 @@ function Areas({ areas, marshId }: { areas: readonly Feature[]; marshId: string 
 }
 
 function Line({ line, unit }: { line: Feature; unit: number }) {
-  const style = styleFor(line.code);
+  const style = styleFor(line.code, { ...(line.colour ? { colour: line.colour } : {}), geometry: 'line' });
   if (style?.geometry !== 'line' || line.geometry.kind !== 'polyline') return null;
   const points = line.geometry.points;
   const d = path(points, false);
@@ -326,7 +336,7 @@ function Ticks({
 }
 
 function Point({ point, unit }: { point: Feature; unit: number }) {
-  const style = styleFor(point.code);
+  const style = styleFor(point.code, { ...(point.colour ? { colour: point.colour } : {}), geometry: 'point' });
   if (style?.geometry !== 'point' || point.geometry.kind !== 'point') return null;
   const { at } = point.geometry;
   switch (style.shape) {

@@ -92,6 +92,78 @@ export class GeneratedProvider implements MapProvider {
   }
 }
 
+/**
+ * A requirement's name in a bundle's window lists.
+ *
+ * Derived from **what it asks for** rather than from which drill asked, because two drills
+ * that want the same ground should share a list, and a drill that changes what it needs
+ * should stop matching windows scored for what it used to need — silently getting the old
+ * ones would be a drill quietly running on the wrong map. Rounded to whole metres so a
+ * floating-point size cannot produce two names for one requirement.
+ */
+export function requirementId(requirement: WindowRequirement): string {
+  const parts = [`s${Math.round(requirement.size)}`];
+  if (requirement.needsRelief) parts.push('relief');
+  if (requirement.relief) {
+    parts.push(`r${Math.round(requirement.relief.minRange)}-${Math.round(requirement.relief.maxRange)}`);
+  }
+  if (requirement.crop !== undefined) parts.push(`c${Math.round(requirement.crop)}`);
+  if (requirement.minControlSites !== undefined) parts.push(`k${requirement.minControlSites}`);
+  return parts.join('.');
+}
+
+/**
+ * A library of imported maps, as a source.
+ *
+ * Unlike the generator it **declines**: a bundle with no relief cannot answer the contours
+ * drill's question, and a bundle whose windows for a requirement came out empty has no
+ * ground that satisfies it. Returning null rather than the best of a bad set is the whole
+ * point — a real map is selected from, not made to order, and a provider that never says
+ * no would hand the contours drill a flat map and call it a hard round.
+ *
+ * `pick` is **pure**: the bundles are fixed, their window lists were written by the
+ * pipeline in a deterministic order, and the only thing that varies is the rng. Loading is
+ * the async part and it happens outside, in `loadLibrary`.
+ */
+export class LibraryProvider implements MapProvider {
+  readonly id: string;
+  readonly bundles: readonly OMap[];
+
+  constructor(bundles: readonly OMap[]) {
+    this.bundles = bundles;
+    // The id is part of what a round is a function of, so it names the bundles rather than
+    // the library: two devices with different maps must not think they agree. Sorted, so
+    // the same set in a different order is the same library.
+    this.id = `library:${[...bundles].map((b) => b.id).sort().join(',')}`;
+  }
+
+  pick(rng: Rng, requirement: WindowRequirement): { map: OMap; crop: Crop } | null {
+    const id = requirementId(requirement);
+    const usable = this.bundles.filter((map) => {
+      if (requirement.needsRelief && map.relief.kind === 'none') return false;
+      return (map.windows?.[id]?.length ?? 0) > 0;
+    });
+    if (usable.length === 0) return null;
+    // Two draws, in this order and always both: a provider whose rng consumption depended
+    // on which map it happened to pick would make every round after it depend on that too.
+    const map = usable[rng.int(usable.length)]!;
+    const windows = map.windows![id]!;
+    const window_ = windows[rng.int(windows.length)]!;
+    if (requirement.crop === undefined) return { map, crop: window_ };
+    // The drill shows less than the window it was given: the sub-window is drawn here, in
+    // the same place in the stream as `GeneratedProvider` draws it.
+    const size = Math.min(requirement.crop, window_.size);
+    return {
+      map,
+      crop: {
+        x: window_.x + rng.range(0, window_.size - size),
+        y: window_.y + rng.range(0, window_.size - size),
+        size,
+      },
+    };
+  }
+}
+
 /** A requirement, back into the numbers the generator takes. */
 export function terrainParamsFor(requirement: WindowRequirement): TerrainParams {
   const wanted = requirement.minFeatures;

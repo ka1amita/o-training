@@ -63,7 +63,7 @@ export interface PexesoParams {
  * one contour and nothing else — two blank cards are a memory game about card position,
  * which is the one thing this drill is not for.
  */
-function requirementFor(level: number): WindowRequirement {
+export function requirementFor(level: number): WindowRequirement {
   const clamped = Math.min(10, Math.max(1, level));
   const scale = (low: number, high: number) =>
     Math.round(low + ((high - low) * (clamped - 1)) / 9);
