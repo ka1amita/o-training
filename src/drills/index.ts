@@ -1,5 +1,6 @@
 import { contours } from './contours/drill.ts';
 import { dohledavka } from './dohledavka/drill.ts';
+import { mapDohledavka } from './mapDohledavka/drill.ts';
 import { mapMemory } from './mapMemory/drill.ts';
 import { matchMadness } from './matchMadness/drill.ts';
 import { pexeso } from './pexeso/drill.ts';
@@ -12,6 +13,7 @@ import type { AnyDrill } from './types.ts';
 export const DRILLS: readonly AnyDrill[] = [
   matchMadness,
   dohledavka,
+  mapDohledavka,
   pexeso,
   contours,
   mapMemory,
