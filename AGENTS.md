@@ -200,3 +200,7 @@ that is only safe while looking is cheap.
 CI runs the first three on every push and pull request. A green run on `main` publishes
 `dist/` to `gh-pages` — so a merge to `main` is a release, and the artifact that ships is
 the one the checks ran against, never a rebuild.
+
+## Merging
+
+Commit work to a separate branch. At the end rebase on top of `main` and verify (I fast-forwarded manually to main).
