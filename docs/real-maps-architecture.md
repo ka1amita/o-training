@@ -514,12 +514,15 @@ their own. Steps 4–6 are the feature.
 
 ### Where the implementation departs from the note above
 
-- **A warp does not carry the features standing on it by default** (`Warp.carries`).
-  §3.1 is right for a real map — a boulder drawn on a knoll belongs on the knoll wherever
-  it goes — but today's landform perturbation moves the bump and leaves the symbols, so
-  switching it on rewrites every map-memory round and re-pins a golden that exists to
-  prove steps 0–3 changed nothing. It is implemented and tested behind the flag; step 4
-  is the place to turn it on and re-pin deliberately.
+- **A warp carries the features standing on it** (`Warp.carries`), as §3.1 always said it
+  should. It was off through steps 0–3 so that their goldens could prove the refactor
+  changed nothing, and step 4 turned it on with the deliberate re-pin that was promised.
+  Carried features are clamped to the map exactly as `move` is, so a warp on the border
+  slides its knoll and leaves a boulder pinned at the edge — the alternative is a feature
+  off the map.
+- **The `siblings` fallback checks visibility** and climbs 2.5x → 5x → 10x with twelve
+  tries at each. Its single unchecked draw was the pre-existing flake recorded in step 3's
+  note, and fixing it was the other half of the same deliberate re-pin.
 - **`Warp` is declared in `relief.ts`**, not with the edits, because `Relief.warped` takes
   one and a relief must not depend on the edit vocabulary. `edits.ts` re-exports it.
 - **The goldens hash `goldenMap`**, an explicit projection of the generator's decisions,

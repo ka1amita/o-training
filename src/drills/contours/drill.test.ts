@@ -242,6 +242,6 @@ describe('map memory / generate', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     expect(hashJson([1, 2].flatMap((s) => [1, 5, 10].map((l) => goldenMemory(memGen(s, l))))))
-      .toMatchInlineSnapshot(`"34ec53bd"`);
+      .toMatchInlineSnapshot(`"9847a464"`);
   });
 });

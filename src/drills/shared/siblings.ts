@@ -40,6 +40,22 @@ export interface SiblingOptions {
 const ATTEMPTS = 24;
 
 /**
+ * The ladder the fallback climbs when nothing at the level's own distance was visible.
+ *
+ * The fallback used to be a single unchecked draw at 2.5x — and an unchecked draw is a
+ * distractor that may be identical to the answer inside the window, which is a round with
+ * two right answers. It happened about once in five hundred map-memory rounds (`seed
+ * 2492758438, level 3`) and the property tests flaked at exactly that rate.
+ *
+ * Bounded attempts at each rung, then a bigger move again: an edit that cannot be seen at
+ * 2.5x is usually one whose pool keeps offering features outside the window, and more
+ * distance is what eventually drags one across it. The first draw is still 2.5x, so a
+ * round whose old fallback happened to be visible keeps the distractor it had.
+ */
+const FALLBACK_FACTORS: readonly number[] = [2.5, 5, 10];
+const FALLBACK_ATTEMPTS = 12;
+
+/**
  * Whether the changed thing still belongs where it now is.
  *
  * Once the generator places a marsh in flat, low ground and a crag on steep ground, an
@@ -111,9 +127,22 @@ export function siblings(
     accepted ??= visibleOnly;
     // Falling back to a bigger move is better than shipping an unanswerable round: an
     // easier distractor is a worse question, a duplicate of the answer is not a question.
-    made.push(
-      accepted ?? { base, edits: [proposeEdit(base, rng, spec(options.distance * 2.5))] },
-    );
+    // Which is exactly why the fallback is checked too — see FALLBACK_FACTORS.
+    if (!accepted) {
+      let last: Variant | null = null;
+      for (const factor of FALLBACK_FACTORS) {
+        for (let attempt = 0; attempt < FALLBACK_ATTEMPTS && !accepted; attempt++) {
+          last = { base, edits: [proposeEdit(base, rng, spec(options.distance * factor))] };
+          if (isVisibleChange(last, options)) accepted = last;
+        }
+        if (accepted) break;
+      }
+      // Thirty-six draws at up to ten times the distance and still nothing shows: the
+      // window holds nothing that can move. Ship the last one rather than loop forever,
+      // and let `wellFormed` be the one that says the round is unanswerable.
+      accepted ??= last;
+    }
+    made.push(accepted!);
   }
 
   const correctIndex = rng.int(count);

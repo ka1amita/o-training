@@ -40,13 +40,14 @@ export interface Warp {
   /**
    * Whether the features standing on the moved ground move with it.
    *
-   * §3.1 of the design note says a warp carries them, and for a real map it must: a
-   * boulder drawn on a knoll belongs on the knoll wherever the knoll goes. The
-   * generator's own distractors deliberately do not, because today's landform
-   * perturbation moves the bump and leaves the symbols, and switching that on changes
-   * every map-memory round — a re-pin of the goldens that exist to prove this refactor
-   * changed nothing. It stays off until that is the point of a change rather than a side
-   * effect of one.
+   * §3.1 of the design note says a warp carries them, and it does: a boulder drawn on a
+   * knoll belongs on the knoll wherever the knoll goes. `proposeEdit` asks for it on every
+   * warp it makes; the flag stays because `Relief.warped` is also called by code that
+   * moves ground with nothing on it, and because a caller that wants the old,
+   * ground-only displacement should have to say so.
+   *
+   * It was off through steps 0-3 of the refactor, whose goldens existed to prove nothing
+   * had changed, and turning it on re-pinned the two goldens over rounds that carry edits.
    */
   readonly carries?: boolean;
 }

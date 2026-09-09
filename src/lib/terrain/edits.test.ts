@@ -14,17 +14,15 @@ const make = (seed: number, level = 5): GeneratedMap =>
 
 const ANY: readonly Edit['op'][] = ['warp', 'move'];
 
-/** Every position an edit could move: the ground's landforms and the map's features. */
-const places = (map: OMap): Vec[] => [
-  ...(map.relief instanceof AnalyticRelief
+const landformsOf = (map: OMap): Vec[] =>
+  map.relief instanceof AnalyticRelief
     ? map.relief.landforms.map((f) => ({ x: f.x, y: f.y }))
-    : []),
-  ...map.features.map(positionOf),
-];
+    : [];
 
-const movedCount = (before: OMap, after: OMap): number => {
-  const was = places(before);
-  const now = places(after);
+/** Every position an edit could move: the ground's landforms and the map's features. */
+const places = (map: OMap): Vec[] => [...landformsOf(map), ...map.features.map(positionOf)];
+
+const movedCount = (was: readonly Vec[], now: readonly Vec[]): number => {
   let moved = 0;
   was.forEach((p, i) => {
     const q = now[i]!;
@@ -34,24 +32,43 @@ const movedCount = (before: OMap, after: OMap): number => {
 };
 
 describe('edits / proposeEdit', () => {
-  it('moves exactly one thing, by the distance asked for', () => {
+  it('moves exactly one thing, by the distance asked for, and carries what stood on it', () => {
     fc.assert(
       fc.property(anySeed, fc.integer({ min: 5, max: 60 }), (seed, distance) => {
         const before = make(seed);
         const edit = proposeEdit(before, seeded(seed + 1), { distance, ops: ANY });
         const after = applyEdits(before, [edit]);
 
-        expect(movedCount(before, after)).toBe(1);
         const d = edit.op === 'warp' ? edit.warp : edit.op === 'move' ? edit : null;
         expect(Math.hypot(d!.dx, d!.dy)).toBeCloseTo(distance, 6);
+
+        if (edit.op !== 'warp') {
+          expect(movedCount(places(before), places(after))).toBe(1);
+          return;
+        }
+        // A warp moves one piece of ground — and, since it carries, whatever was standing
+        // on that ground. So "exactly one thing moved" becomes "exactly one landform
+        // moved, and nothing moved that was not inside the support".
+        expect(movedCount(landformsOf(before), landformsOf(after))).toBe(1);
+        const { centre, radius } = edit.warp;
+        before.features.forEach((was, i) => {
+          const now = after.features[i]!;
+          const at = positionOf(was);
+          if (Math.hypot(at.x - centre.x, at.y - centre.y) < radius) return;
+          expect(positionOf(now)).toEqual(at);
+        });
       }),
       { numRuns: 200 },
     );
   });
 
   it('leaves everything else identical', () => {
+    // A move, specifically: a warp is allowed to take the features standing on it with
+    // it, and the test above is the one that pins which of them may go.
     const before = make(31);
-    const after = applyEdits(before, [proposeEdit(before, seeded(2), { distance: 30, ops: ANY })]);
+    const after = applyEdits(before, [
+      proposeEdit(before, seeded(2), { distance: 30, ops: ['move'] }),
+    ]);
     expect(linesOf(after)).toEqual(linesOf(before));
     expect(after.width).toBe(before.width);
     expect(after.features).toHaveLength(before.features.length);

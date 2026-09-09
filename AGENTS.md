@@ -100,9 +100,11 @@ stale state and the round could not finish.
   `visible` is a **position** test on what moved, not `footprint > 0`. A warp whose disc
   clips the window but whose landform sits outside it does not count, exactly as it did
   not when this was `differsWithin`; loosening it changes which distractor a round takes.
-- **A warp does not carry the features standing on it** unless asked (`Warp.carries`).
-  It should, and a real map's will — but the generator's landform perturbation has always
-  moved the bump and left the symbols, and turning it on rewrites every map-memory round.
+- **A warp carries the features standing on it** (`Warp.carries`, on for every warp
+  `proposeEdit` makes). A knoll that slides out from under its own boulder is not a map
+  anyone drew, and it is a tell a strong player reads instead of the ground. Carried
+  features are clamped to the map, as `move` is. The flag stays because a caller that
+  wants ground-only displacement should have to say so.
 
 **Terrain reads the ground**
 
@@ -151,11 +153,12 @@ instantly without being able to name.
 - Rides are the **compartment grid** and are not a difficulty knob: a managed forest has
   one, and a map of one without it reads as heath. They are dead straight because they
   were cut; `tracePath` is for what was walked.
-- That fallback is **not checked for visibility**, so about one map-memory round in five
-  hundred has two right answers and the property tests flake at that rate (`seed
-  2492758438, level 3`). It pre-dates the `OMap` refactor and reproduces identically
-  before and after it; fixing it changes which distractor those rounds get, and re-pins
-  the goldens.
+- That fallback **is checked for visibility too**, and climbs: twelve tries at 2.5x, then
+  at 5x, then at 10x. A single unchecked draw is a distractor that may be identical to the
+  answer inside the window, which was one map-memory round in five hundred with two right
+  answers and a property suite that flaked at that rate (`seed 2492758438, level 3`). The
+  first draw is still 2.5x, so a round whose old fallback happened to be visible kept the
+  distractor it had.
 
 **Cartography**
 

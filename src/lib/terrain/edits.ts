@@ -88,7 +88,7 @@ function applyOne(map: OMap, edit: Edit): OMap {
         ...map,
         relief: map.relief.warped(edit.warp),
         ...(edit.warp.carries
-          ? { features: map.features.map((f) => carried(f, edit.warp)) }
+          ? { features: map.features.map((f) => carried(f, edit.warp, map)) }
           : {}),
       };
   }
@@ -99,14 +99,23 @@ function applyOne(map: OMap, edit: Edit): OMap {
  *
  * The displacement is the warp's own falloff — the bump the landforms use — so a boulder
  * at the centre of a moved knoll travels the full distance and one at the edge of its
- * support does not move at all. See `Warp.carries` for why the generator's own
- * distractors leave it off.
+ * support does not move at all. Without it a knoll slides out from under its own boulder,
+ * which is not a map any surveyor would draw and is the tell a strong player would learn
+ * to read instead of the ground.
  */
-function carried(feature: Feature, w: Warp): Feature {
+function carried(feature: Feature, w: Warp, map: OMap): Feature {
   const p = positionOf(feature);
   const falloff = bump(Math.hypot(p.x - w.centre.x, p.y - w.centre.y) / w.radius);
   if (falloff === 0) return feature;
-  return translated(feature, w.dx * falloff, w.dy * falloff);
+  // Clamped to the map, exactly as `move` is and for the same reason: how far a
+  // displacement can actually be taken is the map's answer, not the asker's. A warp on
+  // the border therefore slides its knoll (`AnalyticRelief.warped` clamps too) and leaves
+  // a boulder pinned at the edge — a corner case, and a visible map beats a feature off it.
+  const to = {
+    x: Math.min(map.width, Math.max(0, p.x + w.dx * falloff)),
+    y: Math.min(map.height, Math.max(0, p.y + w.dy * falloff)),
+  };
+  return translated(feature, to.x - p.x, to.y - p.y);
 }
 
 /**
@@ -189,7 +198,14 @@ export function proposeEdit(map: OMap, rng: Rng, spec: EditSpec): Edit {
     const dy = Math.sin(angle) * spec.distance;
     if (pool.op === 'warp') {
       const chosen = warps[rng.int(warps.length)]!;
-      return { op: 'warp', warp: { centre: chosen.centre, radius: chosen.radius, dx, dy } };
+      // Carrying, as §3.1 always said a warp should: the ground moves and what stands on
+      // it moves with it. It was off through the refactor because switching it on rewrites
+      // every map-memory round; this is the commit where that is the point rather than a
+      // side effect, and the goldens are re-pinned with it.
+      return {
+        op: 'warp',
+        warp: { centre: chosen.centre, radius: chosen.radius, dx, dy, carries: true },
+      };
     }
     return { op: 'move', feature: pool.features[rng.int(pool.features.length)]!.id, dx, dy };
   }
