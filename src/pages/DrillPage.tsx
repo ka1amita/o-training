@@ -31,6 +31,8 @@ interface Ready {
   readonly startLevel: number;
   readonly policy: MapPolicy;
   readonly maps: readonly OMap[];
+  /** How many bundles the policy asked for, so a short library can be said out loud. */
+  readonly wanted: number;
 }
 
 /**
@@ -46,6 +48,12 @@ interface Ready {
  * it — and `providerFor` then names what is actually there. The default policy fetches
  * nothing at all, so the app that never opens the settings screen still opens a drill
  * without touching the network.
+ *
+ * **The wait is bounded** (`BUNDLE_TIMEOUT_MS`) and what it falls back to is said on
+ * screen. Offline behind a captive portal with nothing cached, every bundle times out,
+ * `providerFor` hands back the plain generator, and the round runs — the same shape as
+ * a match that cannot reach its peer offering split screen rather than spinning. A screen
+ * that silently swapped the ground under a player would be worse than one that waited.
  */
 function Session({ drill }: { drill: AnyDrill }) {
   const [ready, setReady] = useState<Ready | null>(null);
@@ -64,6 +72,7 @@ function Session({ drill }: { drill: AnyDrill }) {
         startLevel: progress.level > 0 ? progress.level : drill.bounds.min,
         policy,
         maps,
+        wanted: names.length,
       });
     })();
     return () => {
@@ -75,8 +84,25 @@ function Session({ drill }: { drill: AnyDrill }) {
   return <RunningSession drill={drill} ready={ready} />;
 }
 
+/**
+ * What to say when the library came up short, or nothing when it did not.
+ *
+ * Counted rather than caught: `loadLibrary` returns what arrived and never says what did
+ * not, which is right — a missing bundle is not an error, it is a smaller library. The
+ * difference between asked and arrived is the whole of what the player needs told, and the
+ * wording has to be **true of this session**: with nothing loaded `providerFor` returns
+ * the plain generator and the rounds really are generated, but with two maps of three the
+ * session is still on real ground and saying otherwise would be a notice that lies.
+ */
+export function shortLibraryNotice(wanted: number, got: number): string | null {
+  if (wanted === 0 || got >= wanted) return null;
+  if (got === 0) return 'Maps could not be loaded — this session is on generated ground.';
+  return `${wanted - got} of ${wanted} maps could not be loaded; playing on the rest.`;
+}
+
 function RunningSession({ drill, ready }: { drill: AnyDrill; ready: Ready }) {
   const { startLevel, policy, maps } = ready;
+  const notice = shortLibraryNotice(ready.wanted, maps.length);
   const [state, dispatch] = useReducer(
     (s: SessionState, e: SessionEvent) => reduce(s, e, drill.bounds),
     undefined,
@@ -183,6 +209,9 @@ function RunningSession({ drill, ready }: { drill: AnyDrill; ready: Ready }) {
         {badge && <span title="where this round's map came from">{badge}</span>}
         {state.streak >= 2 && <span className="text-flag">×{state.streak}</span>}
       </div>
+      {/* One line, above the round rather than instead of it: the session already started
+          on whatever ground it could get, and this only says which. */}
+      {notice && <p className="m-0 pb-2 text-xs text-muted">{notice}</p>}
       {/* Keyed by round: Play holds per-round state (what is matched, whether it has
           reported) in refs, and without a fresh instance the second round would start
           already finished. */}

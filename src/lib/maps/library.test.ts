@@ -6,13 +6,15 @@ import {
   GeneratedProvider, LibraryProvider, requirementId, type WindowRequirement,
 } from './provider.ts';
 import { libraryRequirements, loadLibrary } from './library.ts';
+import { providerFor, type MapPolicy } from './policy.ts';
+import { shortLibraryNotice } from '@/pages/DrillPage.tsx';
 import { loadBundle, type MapBundle } from './bundle.ts';
 import { memoryStore } from '@/lib/store.ts';
 import { seeded } from '@/lib/rng.ts';
 import MapView from '@/lib/terrain/MapView.tsx';
 import { contours as contoursDrill } from '@/drills/contours/drill.ts';
 import { mapMemory } from '@/drills/mapMemory/drill.ts';
-import { pexeso } from '@/drills/pexeso/drill.ts';
+import { pexeso, requirementFor as pexesoRequirement } from '@/drills/pexeso/drill.ts';
 
 /**
  * The first real map, end to end.
@@ -244,5 +246,82 @@ describe('loadLibrary', () => {
     const kv = memoryStore();
     expect(await loadLibrary([url], broken, kv)).toEqual([]);
     expect(await kv.keys()).toEqual([]);
+  });
+
+  it('gives up on a fetch that never answers, and caches nothing', async () => {
+    // The captive-portal case: the connection completes and then nothing arrives. Awaited
+    // before the first round exists, an unbounded wait here is a drill screen stuck on
+    // three dots — the hang `AGENTS.md` refuses for STUN, in another place.
+    const hanging = (() => new Promise<Response>(() => {})) as typeof fetch;
+    const kv = memoryStore();
+    const started = Date.now();
+    expect(await loadLibrary([url], hanging, kv, 40)).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(await kv.keys()).toEqual([]);
+  });
+
+  it('bounds the wait even when the fetcher ignores the signal', async () => {
+    // A signal is a request; the race is what makes the timeout a fact. A service worker
+    // standing in for `fetch`, or a polyfill, need not honour an abort at all.
+    let sawSignal = false;
+    const deaf = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      sawSignal = init?.signal !== undefined;
+      return new Promise<Response>(() => {});
+    }) as typeof fetch;
+    expect(await loadLibrary([url], deaf, undefined, 40)).toEqual([]);
+    expect(sawSignal).toBe(true);
+  });
+
+  it('still loads the bundles that did answer', async () => {
+    // What the fallback is for: two of three maps is a smaller library, not a failure.
+    const slow = ((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input) === url ? fetcher(input, init) : new Promise<Response>(() => {})
+    ) as typeof fetch;
+    const maps = await loadLibrary(['https://example.test/slow.json', url], slow, undefined, 40);
+    expect(maps).toHaveLength(1);
+    expect(maps[0]!.id).toBe(forest.id);
+  });
+
+  it('reads a cached bundle without waiting on the network at all', async () => {
+    // The bound is on the fetch, and a cached map never reaches it: a player who has the
+    // map already is not made to wait for a portal that will not answer.
+    const kv = memoryStore();
+    await loadLibrary([url], fetcher, kv);
+    const hanging = (() => new Promise<Response>(() => {})) as typeof fetch;
+    const maps = await loadLibrary([url], hanging, kv, 40);
+    expect(maps).toHaveLength(1);
+  });
+});
+
+/**
+ * What a drill screen does when the maps do not come.
+ *
+ * Offline behind a captive portal with nothing cached: every bundle times out, the library
+ * is empty, and the session runs on the generator with one line saying so. Split screen
+ * when STUN cannot get through, in another place — the app has no third answer between
+ * working and hanging.
+ */
+describe('a session whose bundles never arrive', () => {
+  const policy: MapPolicy = { source: 'real', library: ['forest-sample.json'] };
+
+  it('falls back to the plain generator, not to a mix over nothing', async () => {
+    const hanging = (() => new Promise<Response>(() => {})) as typeof fetch;
+    const maps = await loadLibrary(['https://example.test/forest.json'], hanging, undefined, 40);
+    expect(maps).toEqual([]);
+    const provider = providerFor(policy, maps);
+    // `generated`, not `mixed:library:,generated`: an id that named a library this device
+    // does not have would be an id claiming rounds it cannot make.
+    expect(provider.id).toBe('generated');
+    expect(provider.pick(seeded(1), pexesoRequirement(5))).not.toBeNull();
+  });
+
+  it('says so in one line, and says something true', () => {
+    expect(shortLibraryNotice(1, 0)).toContain('generated ground');
+    // Two of three is a smaller library, not a generated session — the notice must not
+    // claim ground the round is not on.
+    expect(shortLibraryNotice(3, 2)).toBe('1 of 3 maps could not be loaded; playing on the rest.');
+    expect(shortLibraryNotice(1, 1)).toBeNull();
+    // The default policy asks for nothing, so there is nothing to apologise for.
+    expect(shortLibraryNotice(0, 0)).toBeNull();
   });
 });

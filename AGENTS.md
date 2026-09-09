@@ -75,6 +75,14 @@ stale state and the round could not finish.
 - Split screen is the same rules: `found` carries an optional `by`.
 - STUN cannot fix symmetric or CGNAT. No relay exists, so it must time out and offer split
   screen, never hang.
+- **`loadLibrary` is the app's other network wait, and it is bounded too**
+  (`BUNDLE_TIMEOUT_MS`). A captive portal completes the connection and then answers
+  nothing, so a `fetch` with no timeout is a drill screen stuck on three dots before the
+  first round exists. The signal is passed *and* raced: a fetcher — a service worker, a
+  polyfill, a test stub — need not honour an abort, and a timeout a callee can decline to
+  observe is not a timeout. What it falls back to is said in one line on the drill screen,
+  and the line has to be true of *this* session: nothing loaded is generated ground, two
+  maps of three is still real ground.
 
 **Terrain**
 
