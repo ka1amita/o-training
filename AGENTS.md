@@ -204,3 +204,7 @@ the one the checks ran against, never a rebuild.
 ## Merging
 
 Commit work to a separate branch. At the end rebase on top of `main` and verify (I fast-forwarded manually to main).
+
+## Style
+
+Maintain manually edited configs (e.g., `.gitignore`) lexicographically sorted.

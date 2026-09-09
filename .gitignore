@@ -1,6 +1,6 @@
-.idea
-o-training.iml
-node_modules
-dist
-dev-dist
 .DS_Store
+.idea
+dev-dist
+dist
+node_modules
+o-training.iml
