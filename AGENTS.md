@@ -261,6 +261,45 @@ instantly without being able to name.
 - **No north lines.** Drawn at fixed world positions, a pexeso pair's two crops would show
   them at a known offset — an answer coming from something other than the ground.
 
+**Raster maps**
+
+- **A picture is understood through its colour mask and nothing else.** ISOM colours are
+  separable by design, so a pixel goes back into the class it was inked in
+  (`MASK_CLASSES` in `isom.ts`, computed from the screens the renderer paints — classify
+  against anything else and the app cannot read back its own drawing).
+- The mask is built by a **weighted** majority. A plain one erases the map: ink is a
+  minority of the pixels by design — a contour is two metres of ground and a cell is one —
+  so a straight vote gives every cell to white and the mask comes back with no relief
+  detail, no paths and no boulders.
+- A banner is **uniform *and* not an ISOM colour**. A run of one-colour rows that is an
+  ISOM colour is a lake or a field. And the row's own colour is its **modal** one: a
+  header carries a title, and comparing against its first pixel stops the crop thirty rows
+  into a hundred-row bar.
+- **Cropping reports its offsets.** A crop without them moves the whole map by the height
+  of the banner, which reads as a slightly wrong map rather than as a bug.
+- Anything coarser than **0.5 m per pixel is refused**: a 110 m pexeso card needs 220 px,
+  and a card nobody can read is not a hard round, it is an unanswerable one.
+- **A raster map has `relief: none`, and brown ink is not a height field.** The contours
+  drill declines it twice over — `LibraryProvider` refuses a map with no relief, and the
+  window scores for a relief requirement come out empty. Do not "improve" this by tracing
+  contours from pixels; that is vectorisation, offline, with other tools.
+- **Blobs are not features.** A boulder read off the mask lives in `analysis.moveable`,
+  never in `map.features`: the picture already draws it, and a feature would draw a second
+  one beside it. `applyEdits` and `difference` both look in both places — looking in one
+  is how every distractor on a raster round comes back reported as identical to the answer.
+- A moved blob is a **cut and paste**: the renderer paints the source patch out in the
+  surrounding class and draws the symbol at the new place. Both arrive as data on the map;
+  the answer still comes from the edit, exactly as it does for a drawing.
+- `suits` has **two backends** — a height field or the mask — and `siblings` asks whichever
+  the map offers. A flat map with no picture is asked neither: a grid of zeros has no
+  steepest quarter, and asking it refuses every symbol that has an opinion.
+- **Bundles and their pictures are never precached.** `globPatterns` lists neither `json`
+  nor `png`, and both tests say so, because it is a one-word change with a several-megabyte
+  consequence.
+- No Livelox export is committed. The fixture is **painted in code**
+  (`maps/import/__fixtures__/paint.ts`), which also makes it a test of the classifier
+  rather than of a printer's idea of green.
+
 **Map dohledavka**
 
 - The answer is a **kind of feature**, so two cards need `2n - 1` of them between them:

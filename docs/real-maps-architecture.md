@@ -508,8 +508,10 @@ the comparison is one page.
    resolved, 41 contours at 5 m over 70 m of relief, 378 kB. `Warp.carries` was switched
    on and the `siblings` fallback fixed in the same commit, which is the deliberate
    re-pin step 3 promised; the goldens have not moved since.
-5. **Raster tier.** Image + world file → mask → `RasterLayer`; pexeso and map memory over
-   image-only maps; contours drill declines them.
+5. **Raster tier.** ✅ Done. Image + world file → mask → `RasterLayer`;
+   `maps/import/{png,raster}.ts` and `terrain/mask.ts`; pexeso and map memory over
+   image-only maps; the contours drill declines them. See the notes at the end of this
+   section.
 6. **Policy.** `MapPolicy` in the store, a settings screen, `MixedProvider`; `hello`
    carries the policy.
 
@@ -589,6 +591,84 @@ their own. Step 4 is the feature; 5 and 6 extend it.
   runnable forest, and an imported symbol drawn in it is one meant not to show.
 - **`RasterLayer` and `MapBundle.raster` are declared and unfilled**, as §2.2 allows;
   step 5 fills them.
+
+### Step 5, and where it departs from §1.3, §2.2 and §5.3
+
+The raster tier. A picture with a world file becomes a bundle; pexeso and map memory run
+on it; the contours drill declines it.
+
+```
+node scripts/import-map.mjs livelox.png --world livelox.pgw   --name kokorinsko --scale 10000 --attribution 'club, 2019'
+node scripts/import-map.mjs livelox.png --mpp 0.5 --origin 0,0 --name kokorinsko
+node scripts/import-map.mjs map.xmap --image map.png --world map.pgw --name kokorinsko
+```
+
+- **The colour-class table lives in `isom.ts`, beside the screens, and is computed from
+  them.** `MASK_CLASSES` is the twelve classes §1.3 names; `CLASS_RGB` composites
+  `GREEN_SCREEN` and `YELLOW_SCREEN` over white rather than restating the printed values.
+  So the app classifies against its own drawing — which is what makes a synthetic fixture
+  painted in those screens a test of the classifier rather than of a table of constants.
+- **`RasterLayer.image` is a URL, not an `ImageBitmap`.** §2.2 offered either; the renderer
+  is SVG, an `<image href>` takes a URL, and an `ImageBitmap` needs a canvas to get back
+  out of. The bundle stores a **sibling path** — `forest.png` beside `forest.json` — and
+  `loadBundle` accepts a `data:` URL too and resolves a relative one against the bundle's
+  own URL. Inlining a 2 MB picture as base64 is 2.7 MB of JSON parsed before the first
+  round.
+- **The layer carries an origin and the mask's own cell size**, which §2.2 does not
+  mention: an image may be larger than the map extent, and the mask is at about a metre
+  rather than at the image's own resolution.
+- **The PNG reader is written out** (`maps/import/png.ts`), 8-bit non-interlaced, colour
+  types 0/2/3/4/6, filters 0–4, and it takes **inflate as an argument**. Nothing in `src/`
+  may import `node:zlib` — the parse stage is meant to run in the browser one day — and no
+  package may be added, for the reason `AGENTS.md` gives about generated assets. It writes
+  as well as reads, because the pipeline **crops** the picture and a bundle pointing at the
+  original file would draw the Livelox header inside a pexeso card.
+- **The mask's majority filter is weighted.** §1.3 says "classify each pixel"; doing only
+  that and downsampling by majority erases the map, because ink on an ISOM map is a
+  minority of the pixels by design. Ink counts double, white still wins a cell it almost
+  fills, and a contour line survives into the mask — which is what the brown-density proxy
+  needs to exist at all.
+- **The banner rule needs its second half and a modal colour.** §1.3 only says "a banner to
+  crop off". Uniform-and-not-an-ISOM-colour is the rule, because a run of uniform rows that
+  *is* an ISOM colour is a lake; and the row's own colour has to be its modal one, because
+  a header has writing on it and the left edge is as likely to be inside the logo as inside
+  the bar.
+- **`rasterAnalysis` fills `analysis`, not `features`.** A blob is a `Feature` — that is
+  what an edit names — but it lives in `analysis.moveable`, because the picture already
+  draws it and a feature would draw a second boulder beside every boulder. `applyEdits`
+  materialises a move as a **patch over the pixels plus the symbol at its new place**, and
+  `difference` looks in both places. Control sites are the same blobs; pexeso's
+  `controlFor` appends them after the candidates it already had, so no generated round
+  moves.
+- **The raster half of the analysis is filled only when there are no vector features.** A
+  vectorised map's own symbols are a better answer to every one of those questions than a
+  blob filter is, and two answers are two places for it to be wrong — a boulder that was
+  both a `Feature` and a blob would be counted twice by every window score.
+- **`suitsOnMask` is a short list of contradictions, not preferences.** §3.3 asks for
+  `suits` with a mask backend. A height field can say "the flattest quarter of this map",
+  which is a claim about a surface; a mask can only say what is drawn here. So: nothing but
+  water stands in water, nothing stands on a building or a road, and a water feature does
+  not go where the contour ink is crowded — the marsh-on-dense-brown case §3.3 names, and
+  dense brown is the only word a mask has for steep.
+- **The warped picture is a `useEffect`, not a `useMemo`.** The note guessed `useMemo`; a
+  picture has to be **decoded** before it can be resampled, and decoding is asynchronous.
+  Until it resolves — and in a test, and in a server render — the unwarped picture is
+  drawn, which is the map with its ground unmoved and never a wrong map. The mask, by
+  contrast, is displaced inside `applyEdits`, because everything that *reasons* about the
+  map reads the mask.
+- **A raster-only map is never offered a warp**, so the picture-warping path only runs for
+  a drawing with a picture under it. `proposeEdit` takes warps from
+  `analysis.landforms`, which is empty without a relief — and that is the guard that
+  matters: a warp on a map with no height field and no features would be an edit that
+  changes nothing, which is a round with two right answers.
+- **`Difference.salience` compares a blob with a symbol.** A blob's drawn size in metres
+  goes to paper millimetres at the map's own scale and is floored at the code's ISOM
+  minimum, so a moved dot on a picture and a moved boulder on a drawing come out on one
+  scale — which is what §3.4 wants salience for.
+- **Nothing ships a raster bundle.** The fixture is painted in code in the test; a Livelox
+  image is somebody's cartography and this repository has no licence to it. To look at a
+  real one on `#/dev/maps`, import it into `public/maps/` and add the file to
+  `BUNDLED_MAPS`.
 
 ---
 

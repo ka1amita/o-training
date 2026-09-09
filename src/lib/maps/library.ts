@@ -76,7 +76,10 @@ export async function loadLibrary(
     try {
       const cached = kv ? await kv.get<MapBundle>(keyFor(url)) : undefined;
       const bundle = cached ?? (await fetchBundle(url, fetcher));
-      const map = loadBundle(bundle);
+      // The URL, so a bundle that names its picture as a sibling — `forest.png` beside
+      // `forest.json` — resolves it against the bundle rather than against the page. On a
+      // project site the page is `/ob-training/` and the map is not.
+      const map = loadBundle(bundle, { url });
       // Cached after decoding succeeds, so a bundle that cannot be read is never stored
       // and cannot poison every later launch.
       if (kv && !cached) await kv.set(keyFor(url), bundle);

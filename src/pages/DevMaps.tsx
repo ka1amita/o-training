@@ -5,9 +5,10 @@ import { CONTROL_NAMES } from '@/drills/mapDohledavka/features.ts';
 import { BUNDLED_MAPS, loadLibrary } from '@/lib/maps/library.ts';
 import { GeneratedProvider } from '@/lib/maps/provider.ts';
 import { seeded } from '@/lib/rng.ts';
+import { CLASS_CSS, MASK_CLASSES } from '@/lib/terrain/isom.ts';
 import MapView from '@/lib/terrain/MapView.tsx';
 import Relief from '@/lib/terrain/Relief.tsx';
-import type { Crop, OMap } from '@/lib/terrain/omap.ts';
+import type { Crop, OMap, RasterLayer } from '@/lib/terrain/omap.ts';
 import { generateTerrain, paramsFor } from '@/lib/terrain/terrain.ts';
 
 /**
@@ -24,6 +25,12 @@ import { generateTerrain, paramsFor } from '@/lib/terrain/terrain.ts';
  * because "does an imported map look like the generated ones" is a question that can only
  * be answered with both on one page — and because a bundle that failed to load is simply
  * absent from it, which is the fastest answer there is to "did the import work".
+ *
+ * A bundle that is a **picture** shows its colour mask beside it. That is the only view of
+ * the mask there is, and the mask is what the app understands about an image-only map:
+ * green in the wrong place, contour ink read as grey, a banner counted as map — all of it
+ * is a glance here and is invisible in the picture itself, which looks right whatever the
+ * classifier made of it.
  *
  * Dev build only. `App` loads it lazily behind `import.meta.env.DEV` so the module is
  * dropped from the production bundle rather than merely made unreachable.
@@ -201,11 +208,18 @@ function LibraryRow({ map }: { map: OMap }) {
         {map.meta?.name ?? map.id.slice(0, 8)} · 1:{map.scale} · {Math.round(map.width)} m ·{' '}
         {map.features.length} features · relief {map.relief.kind} ·{' '}
         {map.analysis?.landforms.length ?? 0} landforms
+        {map.raster
+          ? ` · ${map.raster.imageWidth}x${map.raster.imageHeight} px at ` +
+            `${map.raster.metresPerPixel} m · ${map.analysis?.moveable?.length ?? 0} blobs`
+          : ''}
         {map.meta?.attribution ? ` · ${map.meta.attribution}` : ''}
       </div>
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-6 gap-2">
         <Cell label="map">
           <MapView map={map} className="block h-full w-full" />
+        </Cell>
+        <Cell label={map.raster ? 'mask' : 'no mask'}>
+          {map.raster ? <MaskSwatches raster={map.raster} /> : null}
         </Cell>
         <Cell label={card ? `window ${CROP} m` : 'no window'}>
           {card ? <MapView map={map} crop={card} className="block h-full w-full" /> : null}
@@ -223,6 +237,41 @@ function LibraryRow({ map }: { map: OMap }) {
         </Cell>
       </div>
     </div>
+  );
+}
+
+/** How many swatches a side the mask is shown at. Diagnostic, so nearest-neighbour. */
+const SWATCHES = 60;
+
+/**
+ * The colour mask, as a grid of swatches.
+ *
+ * Sampled rather than aggregated: a majority over each swatch would hide exactly what
+ * this is for. Thin ink — a contour, a path — survives the mask as a single cell, and a
+ * swatch that averaged it away would draw the same picture whether the classifier had
+ * found the line or lost it.
+ */
+function MaskSwatches({ raster }: { raster: RasterLayer }) {
+  const cells: React.ReactElement[] = [];
+  for (let j = 0; j < SWATCHES; j++) {
+    for (let i = 0; i < SWATCHES; i++) {
+      const x = Math.min(raster.maskWidth - 1, Math.floor(((i + 0.5) / SWATCHES) * raster.maskWidth));
+      const y = Math.min(raster.maskHeight - 1, Math.floor(((j + 0.5) / SWATCHES) * raster.maskHeight));
+      const klass = MASK_CLASSES[raster.mask[y * raster.maskWidth + x]!] ?? 'unknown';
+      cells.push(
+        <rect key={`${i}-${j}`} x={i} y={j} width={1} height={1} fill={CLASS_CSS[klass]} />,
+      );
+    }
+  }
+  return (
+    <svg
+      viewBox={`0 0 ${SWATCHES} ${SWATCHES}`}
+      className="block h-full w-full"
+      role="img"
+      aria-label="colour mask"
+    >
+      {cells}
+    </svg>
   );
 }
 
