@@ -19,7 +19,13 @@ export type IsomCode = string;
 
 export type Family = 'landform' | 'rock' | 'water' | 'vegetation' | 'manmade' | 'overprint';
 
-export type Colour = 'brown' | 'black' | 'blue' | 'green' | 'yellow' | 'grey' | 'purple';
+/**
+ * White is a colour here and not the absence of one: on an ISOM map it is **runnable
+ * forest**, the ground everything else is the exception to, and an imported symbol inked
+ * in it is a symbol meant not to show.
+ */
+export type Colour =
+  | 'brown' | 'black' | 'blue' | 'green' | 'yellow' | 'grey' | 'purple' | 'white';
 
 /**
  * Where a symbol may legitimately stand.
@@ -197,6 +203,9 @@ export const CONTRAST: Readonly<Record<Colour, number>> = {
   green: 0.5,
   grey: 0.4,
   yellow: 0.35,
+  // Not zero, because a white symbol still has an outline and a shape, but as near to
+  // invisible as this scale goes: it is the ground the rest is drawn on.
+  white: 0.05,
 };
 
 export function semanticsOf(code: IsomCode): Semantics | undefined {

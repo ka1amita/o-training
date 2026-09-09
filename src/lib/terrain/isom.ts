@@ -1,4 +1,4 @@
-import { semanticsOf, type IsomCode } from './semantics.ts';
+import { semanticsOf, type Colour, type IsomCode } from './semantics.ts';
 
 /**
  * ISOM 2017-2 drawing parameters.
@@ -197,7 +197,7 @@ export const SYMBOL: Readonly<Record<IsomCode, SymbolStyle>> = {
   },
 };
 
-const PLAIN: Readonly<Record<'brown' | 'black' | 'blue' | 'green' | 'yellow' | 'grey' | 'purple', string>> = {
+const PLAIN: Readonly<Record<Colour, string>> = {
   brown: COLOUR.brown,
   black: COLOUR.black,
   blue: COLOUR.blue,
@@ -205,6 +205,9 @@ const PLAIN: Readonly<Record<'brown' | 'black' | 'blue' | 'green' | 'yellow' | '
   yellow: COLOUR.yellow,
   grey: COLOUR.grey,
   purple: COLOUR.purple,
+  // 405 runnable forest and everything else inked in it: drawn, and drawn in the ground's
+  // own colour, so it covers what is under it exactly as it does on paper.
+  white: COLOUR.ground,
 };
 
 /**

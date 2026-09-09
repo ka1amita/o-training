@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A hand-written map, small enough to check by hand and shaped to hit every convention
+     the parser has to know: a Bezier, a hole, a multi-part line, a text object to drop, a
+     pattern coord that is not geometry, and a decoration symbol nested inside a line
+     symbol so that "every <symbol> in the file" is visibly the wrong question. -->
+<map xmlns="http://openorienteering.org/apps/mapper/xml/v2" version="9">
+    <georeferencing scale="10000">
+        <projected_crs id="Local"/>
+    </georeferencing>
+    <colors count="4">
+        <color priority="0" name="Black" c="0" m="0" y="0" k="1" opacity="1"/>
+        <color priority="1" name="Brown" c="0" m="0.56" y="1" k="0.18" opacity="1"/>
+        <color priority="2" name="Green" c="0.76" m="0" y="0.91" k="0" opacity="1"/>
+        <color priority="3" name="Opaque White" c="0" m="0" y="0" k="0" opacity="1"/>
+    </colors>
+    <barrier version="6" required="0.6.0">
+        <symbols count="5" id="ISOM2000">
+            <symbol type="2" id="0" code="101" name="Contour">
+                <description>A line joining points of equal height.</description>
+                <line_symbol color="1" line_width="210"/>
+            </symbol>
+            <symbol type="1" id="1" code="112" name="Small knoll">
+                <point_symbol inner_radius="375" inner_color="1" outer_color="-1" elements="0"/>
+            </symbol>
+            <symbol type="4" id="2" code="410" name="Vegetation: impassable">
+                <area_symbol inner_color="2" min_area="0" patterns="0"/>
+            </symbol>
+            <symbol type="8" id="3" code="105" name="Contour value">
+                <text_symbol color="1"/>
+            </symbol>
+            <symbol type="2" id="4" code="777" name="Something we do not know">
+                <line_symbol color="0" line_width="100">
+                    <symbol type="1" code="" name="Mid symbol">
+                        <point_symbol inner_radius="100" inner_color="2" elements="0"/>
+                    </symbol>
+                </line_symbol>
+            </symbol>
+        </symbols>
+        <parts count="1" current="0">
+            <part name="map">
+                <objects count="7">
+                    <object type="1" symbol="0">
+                        <coords count="3">
+                            <coord x="500" y="300"/>
+                            <coord x="1500" y="300"/>
+                            <coord x="1500" y="1300"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="0">
+                        <coords count="4">
+                            <coord x="500" y="1300" flags="1"/>
+                            <coord x="500" y="2300"/>
+                            <coord x="1500" y="2300"/>
+                            <coord x="1500" y="1300"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="0">
+                        <coords count="4">
+                            <coord x="2000" y="300"/>
+                            <coord x="2500" y="300" flags="16"/>
+                            <coord x="3000" y="300"/>
+                            <coord x="3500" y="300"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="2">
+                        <coords count="10">
+                            <coord x="500" y="3300"/>
+                            <coord x="2500" y="3300"/>
+                            <coord x="2500" y="5300"/>
+                            <coord x="500" y="5300"/>
+                            <coord x="500" y="3300" flags="18"/>
+                            <coord x="1000" y="3800"/>
+                            <coord x="2000" y="3800"/>
+                            <coord x="2000" y="4800"/>
+                            <coord x="1000" y="4800"/>
+                            <coord x="1000" y="3800" flags="2"/>
+                        </coords>
+                        <pattern rotation="0">
+                            <coord x="99999" y="99999"/>
+                        </pattern>
+                    </object>
+                    <object type="0" symbol="1">
+                        <coords count="1">
+                            <coord x="1000" y="1000"/>
+                        </coords>
+                    </object>
+                    <object type="4" symbol="3">
+                        <coords count="1">
+                            <coord x="600" y="600"/>
+                        </coords>
+                        <text>42.5</text>
+                    </object>
+                    <object type="1" symbol="4">
+                        <coords count="2">
+                            <coord x="500" y="5800"/>
+                            <coord x="1500" y="5800"/>
+                        </coords>
+                    </object>
+                </objects>
+            </part>
+        </parts>
+    </barrier>
+</map>
