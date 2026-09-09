@@ -653,9 +653,11 @@ node scripts/import-map.mjs map.xmap --image map.png --world map.pgw --name koko
 - **The warped picture is a `useEffect`, not a `useMemo`.** The note guessed `useMemo`; a
   picture has to be **decoded** before it can be resampled, and decoding is asynchronous.
   Until it resolves — and in a test, and in a server render — the unwarped picture is
-  drawn, which is the map with its ground unmoved and never a wrong map. The mask, by
-  contrast, is displaced inside `applyEdits`, because everything that *reasons* about the
-  map reads the mask.
+  drawn, which is the map with its ground unmoved and never a wrong map. The **mask is
+  not rewritten** either: the warp is recorded on the layer and `classAt` carries a point
+  back through the list before it reads a cell — the same chain the renderer applies to the
+  pixels, and four million cells not copied on every one of the thirty-six draws a round
+  can make.
 - **A raster-only map is never offered a warp**, so the picture-warping path only runs for
   a drawing with a picture under it. `proposeEdit` takes warps from
   `analysis.landforms`, which is empty without a relief — and that is the guard that

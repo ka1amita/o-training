@@ -154,7 +154,14 @@ export interface RasterLayer {
   readonly metresPerCell: number;
   /** Where an edit cut something out of the picture, and what to paint over it. */
   readonly patches?: readonly RasterPatch[];
-  /** Warps the picture has been through, for the renderer to resample it by. */
+  /**
+   * Warps this layer has been through, in order.
+   *
+   * Recorded rather than applied: `classAt` carries a point back through them before it
+   * reads a cell, and the renderer resamples the pixels by the same chain, so the mask and
+   * the picture agree by construction. Rewriting the mask instead would copy four million
+   * cells for a two-kilometre map on every one of the thirty-six draws a round can make.
+   */
   readonly warps?: readonly Warp[];
 }
 

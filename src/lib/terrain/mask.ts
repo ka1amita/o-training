@@ -28,10 +28,28 @@ const REACH = 10;
 /** Above this share of contour ink, the ground here is steep enough to argue with. */
 const BROWN_STEEP = 0.22;
 
-/** The class at a point in map metres, or `unknown` off the image. */
+/**
+ * The class at a point in map metres, or `unknown` off the image.
+ *
+ * Warps are applied **here**, on the way in, rather than by rewriting the mask: a point is
+ * carried back through each warp's inverse displacement and then looked up in the mask the
+ * pipeline wrote. The renderer resamples the picture by exactly the same chain, so the two
+ * agree by construction rather than by two implementations agreeing.
+ *
+ * The alternative — displacing the whole mask inside `applyEdits` — copies four million
+ * cells for a two-kilometre map, thirty-six times per round, to answer questions about a
+ * few dozen points. `siblings` calls `difference` (and so `applyEdits`) on every attempt.
+ */
 export function classAt(raster: RasterLayer, x: number, y: number): ColourClass {
-  const i = Math.floor((x - raster.originX) / raster.metresPerCell);
-  const j = Math.floor((y - raster.originY) / raster.metresPerCell);
+  let px = x;
+  let py = y;
+  for (const warp of raster.warps ?? []) {
+    const d = warpDisplacement(warp, px, py);
+    px -= d.x;
+    py -= d.y;
+  }
+  const i = Math.floor((px - raster.originX) / raster.metresPerCell);
+  const j = Math.floor((py - raster.originY) / raster.metresPerCell);
   if (i < 0 || j < 0 || i >= raster.maskWidth || j >= raster.maskHeight) return 'unknown';
   return MASK_CLASSES[raster.mask[j * raster.maskWidth + i]!] ?? 'unknown';
 }
@@ -102,37 +120,13 @@ export function suitsOnMask(code: IsomCode, raster: RasterLayer, p: Vec): boolea
 }
 
 /**
- * The mask, displaced through a warp.
+ * The layer, through a warp.
  *
- * Sampled through the **inverse** displacement, exactly as `GridRelief.warped` resamples
- * a DEM: for each cell of the result, ask which cell of the original moved here. Applying
- * the forward field instead leaves holes wherever the field stretches, which on a mask is
- * a scatter of `unknown` through the middle of the moved ground.
- *
- * The pixels are not touched here — they are displaced at render time, from `warps` — but
- * the mask is, because everything that *reasons* about a raster map reads the mask, and a
- * mask that disagreed with the picture would make an edit plausible on ground that is no
- * longer under it.
+ * The warp is **recorded, not applied**: the mask stays what the pipeline wrote and every
+ * reader goes through `classAt`, which carries its point back through this list. The
+ * renderer does the same to the pixels. One definition of the displacement — the compact
+ * bump in `relief.ts` — reaching the ground, the features, the mask and the picture, which
+ * is the whole reason a warp is one operation rather than four.
  */
-export function warpRaster(raster: RasterLayer, w: Warp): RasterLayer {
-  const { maskWidth, maskHeight, metresPerCell: m } = raster;
-  const mask = new Uint8Array(raster.mask.length);
-  for (let j = 0; j < maskHeight; j++) {
-    for (let i = 0; i < maskWidth; i++) {
-      const x = raster.originX + (i + 0.5) * m;
-      const y = raster.originY + (j + 0.5) * m;
-      const d = warpDisplacement(w, x, y);
-      if (d.x === 0 && d.y === 0) {
-        mask[j * maskWidth + i] = raster.mask[j * maskWidth + i]!;
-        continue;
-      }
-      const si = Math.floor((x - d.x - raster.originX) / m);
-      const sj = Math.floor((y - d.y - raster.originY) / m);
-      mask[j * maskWidth + i] =
-        si < 0 || sj < 0 || si >= maskWidth || sj >= maskHeight
-          ? MASK.unknown
-          : raster.mask[sj * maskWidth + si]!;
-    }
-  }
-  return { ...raster, mask, warps: [...(raster.warps ?? []), w] };
-}
+export const warpRaster = (raster: RasterLayer, w: Warp): RasterLayer =>
+  ({ ...raster, warps: [...(raster.warps ?? []), w] });

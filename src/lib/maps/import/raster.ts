@@ -1,7 +1,7 @@
 import {
   CLASS_RUNNABILITY, MASK, MASK_CLASSES, looksIsom, nearestClass,
 } from '@/lib/terrain/isom.ts';
-import type { Feature, MapAnalysis, RasterLayer, Vec } from '@/lib/terrain/omap.ts';
+import type { Feature, RasterLayer, Vec } from '@/lib/terrain/omap.ts';
 import type { RgbaImage } from './png.ts';
 
 export type { RgbaImage } from './png.ts';
@@ -581,6 +581,3 @@ function blobsOf(raster: RasterLayer): Blob[] {
   found.sort((a, b) => b.area - a.area || a.y - b.y || a.x - b.x);
   return found.slice(0, MAX_BLOBS);
 }
-
-/** The raster half of a map's analysis, merged into the vector half by `analyse`. */
-export type RasterMapAnalysis = Pick<MapAnalysis, 'controlSites' | 'moveable' | 'brown'>;

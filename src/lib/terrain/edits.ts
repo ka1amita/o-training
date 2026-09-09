@@ -88,9 +88,10 @@ function applyOne(map: OMap, edit: Edit): OMap {
       return {
         ...map,
         relief: map.relief.warped(edit.warp),
-        // The picture is ground too. Its mask moves here so that everything which
-        // *reasons* about the map agrees with what is drawn; the pixels themselves are
-        // displaced at render time, from `warps`.
+        // The picture is ground too, and it moves with the rest of it. The warp is
+        // recorded on the layer rather than applied: `mask.ts` reads through the list and
+        // the renderer resamples the pixels by it, so one displacement reaches the height
+        // field, the features, the mask and the picture.
         ...(map.raster ? { raster: warpRaster(map.raster, edit.warp) } : {}),
         ...(edit.warp.carries
           ? { features: map.features.map((f) => carried(f, edit.warp, map)) }
