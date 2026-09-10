@@ -23,7 +23,7 @@ export interface MapPolicy {
   /**
    * Which maps the library holds, by bundle name — `forest-sample.json`, not a URL.
    *
-   * A URL would rot: `import.meta.env.BASE_URL` is `/` in dev and `/ob-training/` on
+   * A URL would rot: `import.meta.env.BASE_URL` is `/` in dev and `/o-training/` on
    * Pages, so a policy stored under one would name nothing under the other. The name is
    * the stable half; `bundleUrl` puts it back together.
    */

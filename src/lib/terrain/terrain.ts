@@ -1086,6 +1086,11 @@ function candidatesOf(landforms: readonly Landform[]): MapAnalysis['landforms'] 
     centre: { x: f.x, y: f.y },
     radius: f.radius * f.elongation,
     amplitude: f.amplitude,
+    // What the generator knows and curvature cannot: which form this is and how it lies.
+    // A warp reads none of it; map dohledavka circles it and names it.
+    kind: f.kind,
+    rotation: f.rotation,
+    elongation: f.elongation,
   }));
 }
 

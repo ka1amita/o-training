@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ISOM_SCALE } from '@/lib/terrain/isom.ts';
 import type { Feature, Vec } from '@/lib/terrain/omap.ts';
 import { AnalyticRelief, type Landform } from '@/lib/terrain/relief.ts';
+import { analyse } from '@/lib/terrain/analysis.ts';
 import { CODE_OF } from '@/lib/terrain/semantics.ts';
 import type { GeneratedMap } from '@/lib/terrain/terrain.ts';
 import { sitesOf } from './features.ts';
@@ -17,20 +18,34 @@ const ground = (over: {
   readonly features?: readonly Feature[];
 } = {}): GeneratedMap => {
   const size = 300;
-  return {
+  const landforms = over.landforms ?? [];
+  const map: GeneratedMap = {
     id: 'generated',
     width: size,
     height: size,
     scale: ISOM_SCALE,
-    relief: new AnalyticRelief({
-      size,
-      tilt: { x: 0.06, y: 0 },
-      noiseSeed: 0,
-      landforms: over.landforms ?? [],
-    }),
+    relief: new AnalyticRelief({ size, tilt: { x: 0.06, y: 0 }, noiseSeed: 0, landforms }),
     features: over.features ?? [],
   };
+  // The drill reads landforms off the analysis, exactly as `generateTerrain` hands them
+  // over: the candidates *are* the forms the map was built from.
+  return {
+    ...map,
+    analysis: analyse(map, {
+      landforms: landforms.map((f) => ({
+        centre: { x: f.x, y: f.y },
+        radius: f.radius * f.elongation,
+        amplitude: f.amplitude,
+        kind: f.kind,
+        rotation: f.rotation,
+        elongation: f.elongation,
+      })),
+    }),
+  };
 };
+
+/** A card is a window; here it is the whole of the little map. */
+const WHOLE = { x: 0, y: 0, size: 300 };
 
 type Kind = keyof typeof CODE_OF;
 
@@ -47,7 +62,7 @@ const point = (kind: Kind, x: number, y: number, size: number): Feature => ({
 });
 
 const RADIUS = 15;
-const kindsOf = (map: GeneratedMap) => sitesOf(map, RADIUS).map((s) => s.kind);
+const kindsOf = (map: GeneratedMap) => sitesOf(map, WHOLE, RADIUS).map((s) => s.kind);
 
 describe('sites', () => {
   it('offers a bend on a path, and not its ends', () => {
@@ -55,7 +70,7 @@ describe('sites', () => {
       features: [line('path', [{ x: 0, y: 150 }, { x: 150, y: 150 }, { x: 220, y: 60 }])],
     });
     expect(kindsOf(path)).toEqual(['path']);
-    expect(sitesOf(path, RADIUS)[0]!.at).toEqual({ x: 150, y: 150 });
+    expect(sitesOf(path, WHOLE, RADIUS)[0]!.at).toEqual({ x: 150, y: 150 });
   });
 
   it('will not hang a control on a straight', () => {
@@ -95,6 +110,7 @@ describe('sites', () => {
           { kind: 'hill', x: 150, y: 150, radius: 100, amplitude: 25, rotation: 0, elongation: 1 },
         ],
       }),
+      WHOLE,
       RADIUS,
     )[0]!;
     expect(site.at.x).toBeGreaterThan(150);

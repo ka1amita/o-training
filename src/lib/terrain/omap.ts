@@ -1,4 +1,4 @@
-import type { Relief, Warp } from './relief.ts';
+import type { LandformKind, Relief, Warp } from './relief.ts';
 import type { Colour, IsomCode } from './semantics.ts';
 
 /**
@@ -192,6 +192,23 @@ export interface MapAnalysis {
     readonly centre: Vec;
     readonly radius: number;
     readonly amplitude: number;
+    /**
+     * What form the source knows this to be, and how it lies — when it knows.
+     *
+     * A generated map was *built* from named landforms and hands them over as they are; a
+     * curvature candidate off a surveyed hillside is a piece of ground that bends, with no
+     * name and no axis, so these are absent there. A warp needs none of them.
+     *
+     * Map dohledavka does: it circles things a control description could name, and on a
+     * map that names none of its landforms it simply offers no relief answers. That is
+     * honest rather than a gap — a card asking "spur or re-entrant?" about a candidate
+     * nobody classified would have no answer of its own.
+     */
+    readonly kind?: LandformKind;
+    /** Radians. Only meaningful with `elongation`. */
+    readonly rotation?: number;
+    /** 1 is round; above 1 stretches along `rotation`, making a spur or a re-entrant. */
+    readonly elongation?: number;
   }[];
   /**
    * Where a control could sit on a map that has no features to sit on — the raster tier.

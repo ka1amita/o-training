@@ -391,8 +391,8 @@ describe('a raster in a bundle', () => {
 
   it('resolves a sibling image against the bundle it came from', () => {
     const bundle = JSON.parse(JSON.stringify(saveBundle(map))) as MapBundle;
-    expect(loadBundle(bundle, { url: '/ob-training/maps/sample.json' }).raster!.image)
-      .toBe('/ob-training/maps/sample.png');
+    expect(loadBundle(bundle, { url: '/o-training/maps/sample.json' }).raster!.image)
+      .toBe('/o-training/maps/sample.png');
     // A data URL is already resolved, and so is an absolute path.
     const inline = { ...bundle, raster: { ...bundle.raster!, image: 'data:image/png;base64,AAA' } };
     expect(loadBundle(inline, { url: '/maps/sample.json' }).raster!.image)

@@ -25,12 +25,13 @@ export function CardView({
   onTap: (kind: ControlKind) => void;
   className?: string;
 }) {
-  const size = card.map.width;
+  const { crop } = card;
+  const size = crop.size;
   return (
     <div className={`relative overflow-hidden ${className ?? ''}`}>
-      <MapView map={card.map} className="block h-full w-full" />
+      <MapView map={card.map} crop={crop} className="block h-full w-full" />
       <svg
-        viewBox={`0 0 ${size} ${size}`}
+        viewBox={`${crop.x} ${crop.y} ${size} ${size}`}
         className="absolute inset-0 block h-full w-full"
         role="group"
         aria-label="controls"

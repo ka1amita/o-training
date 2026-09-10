@@ -462,6 +462,7 @@ breaking them unless its analysis changed.
 | Posunuté pexeso | `size 300`, `minControlSites ≥ pairs`, mixed cover | none (pairs are two windows on one map) | `controlFor` picks from `features` where `controlSite`; a raster-only map picks black/blue blobs from the mask |
 | Contours → relief | `size 380`, `needsRelief`, `relief 20–40 m` | `['warp']`, `minReliefDelta 1.5` | `contoursOnly` draws `relief.contours()`; `Relief.tsx` unchanged. Skips maps with `relief: none` |
 | Map memory | `size 300`, some of every family | `['move','remove','swap','warp']` within the crop | `differsWithin` → `difference(...).visible` |
+| Mapová dohledávka | `size 280–360`, `needsRelief`, no rides and no clusters | none (the two cards are two windows) | `sitesOf` reads `features` by code and `analysis.landforms`; a card is a window, so on a big map two cards can be two windows on one |
 | A future route-choice drill | barriers + runnability raster | none | cost surface from `analysis`; same for both sources |
 
 ---
@@ -522,6 +523,39 @@ the comparison is one page.
 
 Steps 0–3 are a refactor of the existing engine with no new capability and can ship on
 their own. Step 4 is the feature; 5 and 6 extend it.
+
+### Rebasing on to a `main` that changed the generator
+
+This branch was written against the generator as it stood at `879e88f`. `main` then grew
+**clustered detail and a compartment grid** — new `TerrainParams` fields (`rides`,
+`clusters`), a per-pair `separationOf` in place of one `MIN_POINT_SEPARATION`, vegetation
+drawn as chains of lobes, and **Mapová dohledávka**, a fourth terrain drill. Rebasing put
+both on one history, and the joins are these:
+
+- **No new symbol.** Main's additions are more of the kinds that already existed — a ride
+  is 508 and a cluster is boulders, crags and knolls — so every one of them arrives with
+  the ISOM code it always had and a `SEMANTICS` row that already existed. The one semantic
+  change is **206**: main stopped requiring steep ground for a boulder ("it sits wherever
+  the ice dropped it"), so the table's `ground` preference for it is gone, and
+  `suitsPoint` still asks nothing but the table.
+- **`rides` and `clusters` are `WindowRequirement` fields**, not `minFeatures` counts:
+  they are what the generator is asked to draw rather than a floor a surveyed map is
+  scored against. They are deliberately **not** in `requirementId` — like `minFeatures`,
+  which is not either — so an imported map's window lists are unaffected by them.
+- **`within` moved from `perturb` to `EditSpec`.** Main added it to `perturb` because
+  clustered detail broke the draw-and-retry loop; this branch had deleted `perturb` in
+  favour of `edits.ts`, so `proposeEdit` narrows its candidate pools instead. Same fix,
+  same reason, one function along.
+- **`MapAnalysis.landforms` gained optional `kind`, `rotation` and `elongation`.** Mapová
+  dohledávka circles things a control description can name, and a candidate read off
+  curvature has no name. The generator hands over the forms it was built from; `analyse`
+  adds nothing, so an imported bundle is byte for byte what it was.
+- **Areas are drawn one path per symbol**, keyed by code and colour rather than by main's
+  `kind`, for the same reason `MapView` styles by code.
+- **Every terrain golden was re-pinned once**, because main's generator answers
+  differently. Mapová dohledávka's golden became a projection of the drill's *decisions*
+  — which window, which circles, which shared kind — rather than a hash of the round's
+  objects, for the reason `goldenMap` gives.
 
 ### Where the implementation departs from the note above
 

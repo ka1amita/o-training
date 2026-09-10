@@ -1,4 +1,5 @@
 import { requirementFor as contoursRequirement } from '@/drills/contours/drill.ts';
+import { requirementFor as dohledavkaRequirement } from '@/drills/mapDohledavka/drill.ts';
 import { requirementFor as memoryRequirement } from '@/drills/mapMemory/drill.ts';
 import { requirementFor as pexesoRequirement } from '@/drills/pexeso/drill.ts';
 import type { KeyValue } from '@/lib/store.ts';
@@ -14,8 +15,10 @@ import { requirementId, type WindowRequirement } from './provider.ts';
  * restated here. A second list would be a second place for a drill's needs to live, and
  * the day they drifted a drill would silently get windows scored for what it used to want.
  *
- * Deduplicated by `requirementId`, because most levels ask for the same ground: the three
- * drills across ten levels are thirty requirements and four distinct pieces of ground.
+ * Deduplicated by `requirementId`, because most levels ask for the same ground: the four
+ * drills across ten levels are forty requirements and fourteen distinct pieces of ground.
+ * Map dohledavka is the one that grows the list — the card size *is* one of its two
+ * difficulty axes, so each of its ten levels asks for a different square of forest.
  */
 export function libraryRequirements(): WindowRequirement[] {
   const out = new Map<string, WindowRequirement>();
@@ -24,6 +27,7 @@ export function libraryRequirements(): WindowRequirement[] {
       pexesoRequirement(level),
       contoursRequirement(level),
       memoryRequirement(level),
+      dohledavkaRequirement(level),
     ]) {
       const id = requirementId(requirement);
       // The first level to ask wins. What varies across levels is `minFeatures`, which is
@@ -47,7 +51,7 @@ export const BUNDLED_MAPS: readonly string[] = ['forest-sample.json'];
 /**
  * A bundle name, as somewhere to fetch it from.
  *
- * `BASE_URL` is `/` in dev and `/ob-training/` on Pages, which is exactly why a `MapPolicy`
+ * `BASE_URL` is `/` in dev and `/o-training/` on Pages, which is exactly why a `MapPolicy`
  * stores the **name** and never the URL: a policy written under one base would name nothing
  * under the other, and the player's maps would quietly stop loading after a deploy.
  */
@@ -109,7 +113,7 @@ export async function loadLibrary(
       const bundle = cached ?? (await fetchBundle(url, fetcher, timeoutMs));
       // The URL, so a bundle that names its picture as a sibling — `forest.png` beside
       // `forest.json` — resolves it against the bundle rather than against the page. On a
-      // project site the page is `/ob-training/` and the map is not.
+      // project site the page is `/o-training/` and the map is not.
       const map = loadBundle(bundle, { url });
       // Cached after decoding succeeds, so a bundle that cannot be read is never stored
       // and cannot poison every later launch.

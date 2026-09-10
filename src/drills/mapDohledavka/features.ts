@@ -2,11 +2,10 @@ import { sampleGridAt, type Grid } from '@/lib/terrain/height.ts';
 import { POINT, styleFor } from '@/lib/terrain/isom.ts';
 import {
   areasOf, boundsOf, linesOf, pointsOf, positionOf,
-  type Feature, type Vec,
+  type Crop, type Feature, type MapAnalysis, type OMap, type Vec,
 } from '@/lib/terrain/omap.ts';
-import type { Landform, LandformKind } from '@/lib/terrain/relief.ts';
+import type { LandformKind } from '@/lib/terrain/relief.ts';
 import type { IsomCode } from '@/lib/terrain/semantics.ts';
-import type { GeneratedMap } from '@/lib/terrain/terrain.ts';
 
 /**
  * What a control circle can be hung on, and where.
@@ -157,6 +156,19 @@ const GRID = 64;
 const CLIMB_LIMIT = 0.8;
 
 /**
+ * A landform, as the map's own analysis states it.
+ *
+ * Read from `analysis.landforms` and never off the relief, for the reason `AGENTS.md`
+ * gives: every map answers where its landforms are the same way, and a generated map's
+ * candidates *are* the landforms it was built from. A candidate that does not say which
+ * form it is has no name a control description could use, so it is not a site.
+ */
+type Form = MapAnalysis['landforms'][number];
+
+/** Round unless the source said otherwise. A curvature candidate has no axis. */
+const elongationOf = (f: Form): number => f.elongation ?? 1;
+
+/**
  * The top of a rise, rather than the middle of the bump that mostly makes it.
  *
  * Landforms are summed, so a hill on the flank of the ridge has its real summit uphill of
@@ -164,17 +176,17 @@ const CLIMB_LIMIT = 0.8;
  * rather than on the ground, the circle would sit beside the top, and the card would be
  * asking about a hilltop while pointing at a hillside.
  */
-function summitOf(grid: Grid, f: Landform): Vec {
+function summitOf(grid: Grid, f: Form): Vec {
   const sign = f.amplitude >= 0 ? 1 : -1;
   const step = grid.size / grid.n;
-  let best: Vec = { x: f.x, y: f.y };
+  let best: Vec = f.centre;
   let bestHeight = sign * sampleGridAt(grid, best.x, best.y);
 
   for (let i = 0; i < 12; i++) {
     let moved = false;
     for (const [dx, dy] of [[step, 0], [-step, 0], [0, step], [0, -step]] as const) {
       const q = { x: best.x + dx, y: best.y + dy };
-      if (Math.hypot(q.x - f.x, q.y - f.y) > f.radius * CLIMB_LIMIT) continue;
+      if (Math.hypot(q.x - f.centre.x, q.y - f.centre.y) > f.radius * CLIMB_LIMIT) continue;
       const height = sign * sampleGridAt(grid, q.x, q.y);
       if (height > bestHeight) {
         bestHeight = height;
@@ -200,12 +212,12 @@ function summitOf(grid: Grid, f: Landform): Vec {
  * A spur is measured **across** itself only. Along its length it runs back into the
  * hillside it came from, and asking for a drop there would be asking it to be a hill.
  */
-function standsOut(grid: Grid, f: Landform, at: Vec): boolean {
+function standsOut(grid: Grid, f: Form, at: Vec): boolean {
   const sign = f.amplitude >= 0 ? 1 : -1;
   const here = sampleGridAt(grid, at.x, at.y);
-  const across = f.rotation + Math.PI / 2;
+  const across = (f.rotation ?? 0) + Math.PI / 2;
   const directions =
-    f.elongation > 1.2 ? [across, across + Math.PI] : [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+    elongationOf(f) > 1.2 ? [across, across + Math.PI] : [0, Math.PI / 2, Math.PI, -Math.PI / 2];
 
   return directions.every((angle) => {
     const q = { x: at.x + Math.cos(angle) * f.radius, y: at.y + Math.sin(angle) * f.radius };
@@ -281,13 +293,25 @@ function areaReach(area: Feature, at: Vec): number {
   return reach;
 }
 
-/** Everything on this map a player could name, and where a control could go on it. */
-function candidatesOf(map: GeneratedMap): (Site | Unanswerable)[] {
+/**
+ * Everything in this window a player could name, and where a control could go on it.
+ *
+ * Culled to the window plus one circle's reach, because that is everything a ring centred
+ * inside the window can contain — and because a surveyed map is two kilometres of forest
+ * where a card is three hundred metres of it, so the alternative is comparing every
+ * feature on it with every other one, ten pairs of cards a round.
+ */
+function candidatesOf(map: OMap, crop: Crop, radius: number): (Site | Unanswerable)[] {
   const grid = map.relief.sampleGrid(GRID);
-  const unit = map.width / 100;
+  const unit = crop.size / 100;
   const raw: (Site | Unanswerable)[] = [];
+  const near = (f: Feature): boolean => {
+    const box = boundsOf(f);
+    return box.maxX >= crop.x - radius && box.minX <= crop.x + crop.size + radius &&
+      box.maxY >= crop.y - radius && box.minY <= crop.y + crop.size + radius;
+  };
 
-  pointsOf(map).forEach((p, i) => {
+  pointsOf(map).filter(near).forEach((p, i) => {
     const kind = ANSWERS[p.code];
     if (!kind) return;
     const at = positionOf(p);
@@ -301,17 +325,20 @@ function candidatesOf(map: GeneratedMap): (Site | Unanswerable)[] {
     });
   });
 
-  map.relief.landforms.forEach((f, i) => {
+  (map.analysis?.landforms ?? []).forEach((f, i) => {
+    // A candidate nobody named is a piece of ground that bends, and no control description
+    // has a word for that. See `MapAnalysis.landforms`.
+    if (!f.kind) return;
     // A spur has no summit to stand on: it is read along its length, so the circle goes on
     // the middle of it. A hill or a hollow is read at its top or bottom.
-    const at = f.elongation > 1.2 ? { x: f.x, y: f.y } : summitOf(grid, f);
+    const at = elongationOf(f) > 1.2 ? f.centre : summitOf(grid, f);
     // A landform the ground does not actually show is not a site. See `standsOut`: the
-    // feature list says there is a hill here, and the contours are what the player has.
+    // analysis says there is a hill here, and the contours are what the player has.
     if (!standsOut(grid, f, at)) return;
     raw.push({ kind: f.kind, at, shape: [at], reach: 0, source: `landform:${i}`, answerable: true });
   });
 
-  linesOf(map).forEach((line, i) => {
+  linesOf(map).filter(near).forEach((line, i) => {
     if (line.geometry.kind !== 'polyline') return;
     const shape = line.geometry.points;
     if (BLOCKING.includes(line.code)) {
@@ -328,7 +355,7 @@ function candidatesOf(map: GeneratedMap): (Site | Unanswerable)[] {
     }
   });
 
-  areasOf(map).forEach((area, i) => {
+  areasOf(map).filter(near).forEach((area, i) => {
     const kind = ANSWERS[area.code];
     const blocks = BLOCKING.includes(area.code);
     if (!kind && !blocks) return;
@@ -364,16 +391,16 @@ function candidatesOf(map: GeneratedMap): (Site | Unanswerable)[] {
  * level 10 card: 3 mm across leaves a median of seven kinds a card and nine between two of
  * them, which is what five controls need; 4 mm leaves four; ISOM's own 6 mm leaves one.
  */
-export function sitesOf(map: GeneratedMap, radius: number): Site[] {
-  const raw = candidatesOf(map);
+export function sitesOf(map: OMap, crop: Crop, radius: number): Site[] {
+  const raw = candidatesOf(map, crop, radius);
   return raw
     .filter((c) => c.answerable)
     .filter(
       (c) =>
-        c.at.x >= radius &&
-        c.at.y >= radius &&
-        c.at.x <= map.width - radius &&
-        c.at.y <= map.width - radius,
+        c.at.x >= crop.x + radius &&
+        c.at.y >= crop.y + radius &&
+        c.at.x <= crop.x + crop.size - radius &&
+        c.at.y <= crop.y + crop.size - radius,
     )
     .filter((c) =>
       raw.every(

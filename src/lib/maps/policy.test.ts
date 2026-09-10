@@ -8,6 +8,7 @@ import {
   sourceOf, type MapPolicy,
 } from './policy.ts';
 import { GeneratedProvider, type WindowRequirement } from './provider.ts';
+import { mapDohledavka } from '@/drills/mapDohledavka/drill.ts';
 import { mapsOfRound } from '@/drills/types.ts';
 import { contours } from '@/drills/contours/drill.ts';
 import { mapMemory } from '@/drills/mapMemory/drill.ts';
@@ -108,9 +109,10 @@ describe('the badge a round wears', () => {
 
   it('finds the ground under every terrain drill', () => {
     // `mapsOfRound` reads a convention rather than a field — `base` for the two
-    // four-option drills, `maps` for pexeso — so the thing that could break it silently is
-    // a drill renaming what it holds. This is the test that would notice.
-    for (const drill of [contours, mapMemory, pexeso]) {
+    // four-option drills, `maps` for pexeso, `cards` for map dohledavka — so the thing that
+    // could break it silently is a drill renaming what it holds. This is the test that
+    // would notice.
+    for (const drill of [contours, mapMemory, pexeso, mapDohledavka]) {
       const round = drill.generate(seeded(3), 5, ctx);
       expect(mapsOfRound(round).length, drill.id).toBeGreaterThan(0);
       expect(sourceBadge(mapsOfRound(round)), drill.id).toBe('gen');

@@ -65,10 +65,10 @@ describe('map dohledavka / generate', () => {
                 line.geometry.kind === 'polyline' &&
                 line.geometry.points.some((p) => p.x === control.x && p.y === control.y),
             );
-            const relief = card.map.relief.landforms.some(
+            const relief = (card.map.analysis?.landforms ?? []).some(
               (f) =>
                 f.kind === control.kind &&
-                Math.hypot(f.x - control.x, f.y - control.y) <= f.radius,
+                Math.hypot(f.centre.x - control.x, f.centre.y - control.y) <= f.radius,
             );
             expect(exact || online || relief).toBe(true);
           }
@@ -106,8 +106,10 @@ describe('map dohledavka / generate', () => {
         const round = gen(seed, level);
         for (const card of round.cards) {
           for (const c of card.controls) {
-            expect(Math.min(c.x, c.y)).toBeGreaterThanOrEqual(round.radius);
-            expect(Math.max(c.x, c.y)).toBeLessThanOrEqual(card.map.width - round.radius);
+            expect(c.x).toBeGreaterThanOrEqual(card.crop.x + round.radius);
+            expect(c.y).toBeGreaterThanOrEqual(card.crop.y + round.radius);
+            expect(c.x).toBeLessThanOrEqual(card.crop.x + card.crop.size - round.radius);
+            expect(c.y).toBeLessThanOrEqual(card.crop.y + card.crop.size - round.radius);
           }
           for (let i = 0; i < card.controls.length; i++) {
             for (let j = i + 1; j < card.controls.length; j++) {
@@ -185,8 +187,8 @@ describe('map dohledavka / generate', () => {
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
         const round = gen(seed, level);
-        expect(round.radius).toBeCloseTo(round.cards[0].map.width * CIRCLE_FRACTION, 9);
-        expect(round.cards[0].map.width).toBe(round.cards[1].map.width);
+        expect(round.radius).toBeCloseTo(round.cards[0].crop.size * CIRCLE_FRACTION, 9);
+        expect(round.cards[0].crop.size).toBe(round.cards[1].crop.size);
       }),
       { numRuns: 20 },
     );
@@ -221,8 +223,17 @@ describe('map dohledavka / determinism', () => {
   });
 
   it('golden: fixed seeds at fixed levels', () => {
-    const rounds = [1, 2].flatMap((s) => [1, 5, 9].map((l) => gen(s, l)));
-    expect(hashJson(rounds)).toMatchInlineSnapshot(`"e33ad023"`);
+    // Over the drill's **decisions** and not the maps that carry them, for the reason
+    // `goldenMap` gives: which window each card shows, what is circled on it and where,
+    // and which kind the two share. The ground itself is pinned by the terrain golden, and
+    // a map that changed would come through here as different sites and different circles.
+    const golden = (round: MapDobbleRound) => ({
+      cards: round.cards.map((card) => ({ crop: card.crop, controls: card.controls })),
+      shared: round.shared,
+      radius: round.radius,
+    });
+    const rounds = [1, 2].flatMap((s) => [1, 5, 9].map((l) => golden(gen(s, l))));
+    expect(hashJson(rounds)).toMatchInlineSnapshot(`"4a0dbebe"`);
   });
 });
 
@@ -271,12 +282,17 @@ describe('map dohledavka / wellFormed detects what it claims to', () => {
     expect(drill.wellFormed(withControls(0, piled)).join(' ')).toContain('collide');
   });
 
-  it('catches both cards being the same map', () => {
+  it('catches both cards being the same ground', () => {
+    // The same map is fine — two windows on one big map are two cards. The same *window*
+    // on it is not: every kind on one card is then a kind on the other.
     const twins: MapDobbleRound = {
       ...good,
-      cards: [good.cards[0], { ...good.cards[1], map: good.cards[0].map }],
+      cards: [
+        good.cards[0],
+        { ...good.cards[1], map: good.cards[0].map, crop: good.cards[0].crop },
+      ],
     };
-    expect(drill.wellFormed(twins).join(' ')).toContain('the same map');
+    expect(drill.wellFormed(twins).join(' ')).toContain('the same ground');
   });
 
   it('catches cards of different lengths', () => {

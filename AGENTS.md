@@ -98,7 +98,8 @@ stale state and the round could not finish.
   card in it.
 - Point separation is **per pair** (`separationOf`), not one constant: a crag is a line
   twice as long as a boulder is wide, and a field of them at the boulder spacing smears
-  into one black mass. `MIN_POINT_SEPARATION` is the advertised floor and is tested
+  into one black mass. It is asked of the **code**, so an imported 203 takes the same room
+  a generated crag does. `MIN_POINT_SEPARATION` is the advertised floor and is tested
   against every pair of kinds.
 - `MapView` culls to the window — 381 elements to 228 on a 12-card board.
 - The contours drill edits with a **warp** (a boulder has no relief); map memory's edit
@@ -345,12 +346,28 @@ instantly without being able to name.
   line like a path; 403 is the yellow of a clearing at half the screen. The greens are not
   in that list: nothing in the vocabulary is a wash of green, and half the control circles
   on a real map have some.
+- **The answer space is keyed by ISOM code, not by the generator's `kind`.** `ANSWERS` maps
+  code to the word a control description would use, and `BLOCKING` names the two that get
+  in the way — so an imported 206 and a generated boulder are one answer, and a code the
+  table does not name is not an answer at all, because the player has no word for it either.
+- **A card is a window, and it comes from a `MapProvider`.** `generate` states a
+  `WindowRequirement` and is handed a map and a crop, like every other terrain drill; on the
+  generator the crop is the whole map, which is exactly the card this drill always drew.
+  `sitesOf` takes the crop and culls to it plus one circle's reach — everything a ring
+  centred inside the window can contain — because a surveyed map is two kilometres of forest
+  where a card is three hundred metres of it.
+- **Landforms are read off `analysis.landforms`**, like everything else that asks a map
+  where its ground is shaped. A candidate carries `kind` only when the source knew it: the
+  generator was *built* from named landforms, curvature was not. So on a surveyed map this
+  drill offers no relief answers and makes thinner cards through the `wanted--` ladder,
+  rather than circling a bend in the ground and calling it a spur.
 - **`placePoints` puts knolls on `ground.maxima`** — which is exactly where a hilltop is.
   Hill and knoll shadow each other constantly, and that is the map being honest rather
   than the rule being harsh.
 - Symbols are **drawn wider than their feature point**: a crag is a line across the slope,
   so its centre can be outside a ring with half of it inside. `drawnReach` measures what
-  the eye sees, not what the feature list says.
+  the eye sees, not what the feature list says, and it asks the same style table `MapView`
+  asks rather than keeping a second list of radii.
 - A landform is a site only if the **ground shows it** — `standsOut` asks the height field
   for a full contour interval of relief, since an 8 m hill on ground already falling 10 m
   over the same distance closes no contour. Round ones are then circled at the summit the

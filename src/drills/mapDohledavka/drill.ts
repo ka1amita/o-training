@@ -1,6 +1,7 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
+import type { RoundContext, WindowRequirement } from '@/lib/maps/provider.ts';
 import type { Rng } from '@/lib/rng.ts';
-import { generateTerrain, type GeneratedMap, type TerrainParams } from '@/lib/terrain/terrain.ts';
+import type { Crop, OMap } from '@/lib/terrain/omap.ts';
 import { byKind, sitesOf, type ControlKind, type Site } from './features.ts';
 import Play from './Play.tsx';
 
@@ -24,7 +25,16 @@ export interface Control {
 }
 
 export interface MapCard {
-  readonly map: GeneratedMap;
+  readonly map: OMap;
+  /**
+   * The window this card shows.
+   *
+   * A card is a window and not a whole map, because the ground comes from a `MapProvider`
+   * now and a surveyed map is two kilometres of forest where a card is three hundred
+   * metres of it. On the generator the window *is* the whole map, which is exactly what
+   * this drill drew before.
+   */
+  readonly crop: Crop;
   readonly controls: readonly Control[];
 }
 
@@ -83,27 +93,34 @@ export function paramsFor(level: number): MapDobbleParams {
 }
 
 /**
- * A card is a whole map rather than a crop, so everything the question is about is on it.
+ * The ground one card needs, stated once — the drill asks a `MapProvider` for it rather
+ * than calling the generator, like every other terrain drill.
  *
  * Density rises with the level for the same reason the card grows: the decoys are the
  * features nobody circled, and a map with four things on it has none.
+ *
+ * `needsRelief` because a third of the answer vocabulary is relief: a picture of a map has
+ * no height field, so nothing on it would ever stand out as a hilltop or a re-entrant.
  */
-function terrainFor(level: number, size: number): TerrainParams {
+export function requirementFor(level: number): WindowRequirement {
   const clamped = Math.min(10, Math.max(1, level));
   const scale = (low: number, high: number) =>
     Math.round(low + ((high - low) * (clamped - 1)) / 9);
   return {
-    size,
-    // Six is the floor, not a taste: `placeLandforms` only digs a depression at six or
-    // more, and a card whose relief offers three kinds instead of four is a card short of
-    // answers.
-    landforms: scale(6, 10),
-    points: scale(12, 20),
-    lines: scale(2, 3),
-    areas: scale(3, 6),
+    size: paramsFor(level).size,
+    needsRelief: true,
+    minFeatures: {
+      // Six is the floor, not a taste: `placeLandforms` only digs a depression at six or
+      // more, and a card whose relief offers three kinds instead of four is a card short
+      // of answers.
+      landform: scale(6, 10),
+      point: scale(12, 20),
+      line: scale(2, 3),
+      area: scale(3, 6),
+    },
     // Both off, and for the same reason: a site is a ring holding one nameable thing, and
     // these two fill rings with things that are not answers. A ride is a black line the
-    // player reads as a path (see `LOOKALIKES`), and a rock field puts a second boulder
+    // player reads as a path (see `BLOCKING`), and a rock field puts a second boulder
     // inside every circle a boulder could have. With either of them on, a level 10 pair of
     // cards runs out of sites before it has the five circles the level asks for.
     rides: 0,
@@ -112,13 +129,17 @@ function terrainFor(level: number, size: number): TerrainParams {
 }
 
 interface Draft {
-  readonly map: GeneratedMap;
+  readonly map: OMap;
+  readonly crop: Crop;
   readonly sites: Map<ControlKind, Site[]>;
 }
 
-function draft(rng: Rng, params: TerrainParams, radius: number): Draft {
-  const map = generateTerrain(rng, params);
-  return { map, sites: byKind(sitesOf(map, radius)) };
+function draft(rng: Rng, ctx: RoundContext, requirement: WindowRequirement, radius: number): Draft | null {
+  const picked = ctx.maps.pick(rng, requirement);
+  // Only a provider that can decline returns null, and one that declines everything is a
+  // misconfiguration rather than a round to muddle through.
+  if (!picked) return null;
+  return { map: picked.map, crop: picked.crop, sites: byKind(sitesOf(picked.map, picked.crop, radius)) };
 }
 
 interface Handout {
@@ -209,8 +230,8 @@ function compose(rng: Rng, a: Draft, b: Draft, count: number, radius: number): M
 
   return {
     cards: [
-      { map: a.map, controls: first },
-      { map: b.map, controls: second },
+      { map: a.map, crop: a.crop, controls: first },
+      { map: b.map, crop: b.crop, controls: second },
     ],
     shared: handout.shared,
     radius,
@@ -235,16 +256,17 @@ export const mapDohledavka = defineDrill<MapDobbleRound, MapDobbleAnswer>({
   bounds: { min: 1, max: 10 },
   roundsPerSession: 10,
 
-  generate(rng: Rng, level: number): MapDobbleRound {
+  generate(rng: Rng, level: number, ctx: RoundContext): MapDobbleRound {
     const { controls, size } = paramsFor(level);
-    const params = terrainFor(level, size);
+    const requirement = requirementFor(level);
     const radius = size * CIRCLE_FRACTION;
 
     let lean: MapDobbleRound | null = null;
 
     for (let attempt = 0; attempt < MAPS; attempt++) {
-      const a = draft(rng, params, radius);
-      const b = draft(rng, params, radius);
+      const a = draft(rng, ctx, requirement, radius);
+      const b = draft(rng, ctx, requirement, radius);
+      if (!a || !b) throw new Error('map dohledavka: no map with relief for this level');
 
       // Down from what the level asked for: a pair of thin maps costs a circle rather than
       // the round. Measured over 800 rounds a level, it cost one once, at level 10.
@@ -273,7 +295,13 @@ export const mapDohledavka = defineDrill<MapDobbleRound, MapDobbleAnswer>({
     if (a.controls.length !== b.controls.length) {
       problems.push(`cards carry ${a.controls.length} and ${b.controls.length} controls`);
     }
-    if (a.map === b.map) problems.push('both cards are the same map');
+    // The same window on the same map, which is the one thing two cards may never be:
+    // every kind on one is then a kind on the other. Two windows on one big map are two
+    // cards, and the library is what makes that possible.
+    if (a.map === b.map && a.crop.x === b.crop.x && a.crop.y === b.crop.y
+      && a.crop.size === b.crop.size) {
+      problems.push('both cards are the same ground');
+    }
 
     round.cards.forEach((card, index) => {
       const kinds = card.controls.map((c) => c.kind);
@@ -284,7 +312,7 @@ export const mapDohledavka = defineDrill<MapDobbleRound, MapDobbleAnswer>({
         problems.push(`card ${index} circles a kind twice`);
       }
 
-      const sites = sitesOf(card.map, round.radius);
+      const sites = sitesOf(card.map, card.crop, round.radius);
       for (const control of card.controls) {
         const site = sites.find(
           (s) => s.kind === control.kind && s.at.x === control.x && s.at.y === control.y,
