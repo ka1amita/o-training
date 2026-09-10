@@ -557,6 +557,18 @@ both on one history, and the joins are these:
   — which window, which circles, which shared kind — rather than a hash of the round's
   objects, for the reason `goldenMap` gives.
 
+Where each hash ended up, and the step that pinned it:
+
+| Golden | Value | Pinned in |
+|---|---|---|
+| `terrain.test.ts` — the generator | `b6b1aff3` | step 0, when features gained a code |
+| `contours/drill.test.ts` — contours | `9818605d` | unchanged: a contours map has no points, lines or areas, so `goldenMap` projects exactly what `main` hashed |
+| `contours/drill.test.ts` — map memory | `9847a464` | the commit that checks the `siblings` fallback and climbs it |
+| `pexeso/drill.test.ts` | `3569fca9` | the commit that makes a control one draw and not two |
+| `mapDohledavka/drill.test.ts` | `4a0dbebe` | the commit that puts the drill on the provider |
+| `rng.test.ts`, `matchMadness`, `dohledavka` | unchanged | the symbol drills never touch the generator |
+| `raster-tier.test.ts` — the markup pins | `0d1e89f8` / `a6b2e317` / `b10ee025`, and `77a61b90` for the imported map | re-measured against the commit before the raster tier, which is what they have always claimed |
+
 ### Where the implementation departs from the note above
 
 - **A warp carries the features standing on it** (`Warp.carries`), as §3.1 always said it
