@@ -153,10 +153,33 @@ function draft(
   return { map: picked.map, crop: picked.crop, sites: byKind(sitesOf(picked.map, picked.crop, radius)) };
 }
 
-const sameGround = (a: Draft, b: Draft): boolean =>
-  a.map === b.map && a.crop.x === b.crop.x && a.crop.y === b.crop.y && a.crop.size === b.crop.size;
+/**
+ * How much of one card the other is also showing, 0 to 1.
+ *
+ * Zero for two different maps, and the share of the window for two windows of one — the
+ * same window is 1, which is what `wellFormed` refuses outright. In between is what the
+ * library actually hands out: a 360 m card cut from a 554 m map cannot move more than
+ * 194 m, so two of them always share at least a fifth of their ground.
+ */
+function overlap(a: Draft, b: Draft): number {
+  if (a.map !== b.map) return 0;
+  const wide = Math.min(a.crop.x + a.crop.size, b.crop.x + b.crop.size) - Math.max(a.crop.x, b.crop.x);
+  const high = Math.min(a.crop.y + a.crop.size, b.crop.y + b.crop.size) - Math.max(a.crop.y, b.crop.y);
+  if (wide <= 0 || high <= 0) return 0;
+  return (wide * high) / (a.crop.size * a.crop.size);
+}
 
-/** Redraws of the second card before the generator is asked for one instead. */
+/**
+ * How much of one card the other may repeat before it is worth looking again.
+ *
+ * Not a fairness bar — the answer is a *kind*, so two cards of one hillside still have one
+ * shared kind and `wellFormed` still says so. It is what the cards are for: two windows
+ * that are mostly the same ground offer mostly the same decoys, and the same boulder drawn
+ * twice can be matched by where it is rather than by what it is.
+ */
+const MAX_OVERLAP = 0.25;
+
+/** Redraws of the second card before it settles for the least repetitive one seen. */
 const REDRAWS = 4;
 
 /**
@@ -175,8 +198,15 @@ const ELSEWHERE: MapProvider = new GeneratedProvider();
 /**
  * A second card, on ground the first is not already showing.
  *
+ * Takes the first draw that repeats little enough of the first card, and otherwise the
+ * least repetitive of five — a library of one small map has nowhere far enough to go, and
+ * refusing every window would be refusing the map. Only where every draw is the *same*
+ * window does it go elsewhere.
+ *
  * Deterministic, like everything else here: the redraws come out of the same rng stream in
- * a fixed order, so the round is still a function of `(seed, level, provider.id)`.
+ * a fixed order, so the round is still a function of `(seed, level, provider.id)`. The
+ * generator is unaffected — it makes a new map for every pick, so the first draw shares no
+ * ground and is taken, exactly as the single draw here used to be.
  */
 function second(
   rng: Rng,
@@ -185,12 +215,20 @@ function second(
   radius: number,
   first: Draft,
 ): Draft | null {
+  let best: Draft | null = null;
+  let least = Infinity;
   for (let tries = 0; tries <= REDRAWS; tries++) {
     const drawn = draft(rng, maps, requirement, radius);
-    if (!drawn) return null;
-    if (!sameGround(first, drawn)) return drawn;
+    if (!drawn) return best;
+    const share = overlap(first, drawn);
+    if (share <= MAX_OVERLAP) return drawn;
+    if (share < least) {
+      least = share;
+      best = drawn;
+    }
   }
-  return draft(rng, ELSEWHERE, requirement, radius);
+  // Every window this library has for the size is the one the first card is showing.
+  return least >= 1 ? draft(rng, ELSEWHERE, requirement, radius) : best;
 }
 
 interface Handout {

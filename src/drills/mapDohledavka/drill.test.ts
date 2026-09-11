@@ -24,16 +24,26 @@ class Shelf implements MapProvider {
   constructor(
     private readonly ground: { map: OMap; crop: Crop },
     private readonly windows: number,
+    /** How far apart the windows are, as a share of one. 0 stacks them almost exactly. */
+    private readonly stride = 0.002,
   ) {
-    this.id = `shelf:${windows}`;
+    this.id = `shelf:${windows}:${stride}`;
   }
 
   pick(rng: Rng): { map: OMap; crop: Crop } {
     const { map, crop } = this.ground;
-    const step = rng.int(this.windows);
-    return { map, crop: { ...crop, x: crop.x + step * 0.5, y: crop.y + step * 0.5 } };
+    const step = rng.int(this.windows) * this.stride * crop.size;
+    return { map, crop: { ...crop, x: crop.x + step, y: crop.y + step } };
   }
 }
+
+/** How much of one card's ground the other also shows. */
+const shared = (a: MapDobbleRound['cards'][number], b: MapDobbleRound['cards'][number]): number => {
+  if (a.map !== b.map) return 0;
+  const w = Math.min(a.crop.x + a.crop.size, b.crop.x + b.crop.size) - Math.max(a.crop.x, b.crop.x);
+  const h = Math.min(a.crop.y + a.crop.size, b.crop.y + b.crop.size) - Math.max(a.crop.y, b.crop.y);
+  return w > 0 && h > 0 ? (w * h) / (a.crop.size * a.crop.size) : 0;
+};
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: drill.bounds.min, max: drill.bounds.max });
@@ -211,6 +221,26 @@ describe('map dohledavka / generate', () => {
         }
       }
     }
+  });
+
+  it('takes the window that repeats least of the first card', () => {
+    // Two windows that are mostly the same hillside offer mostly the same decoys, and the
+    // same boulder drawn twice can be matched by where it is rather than by what it is.
+    // One big map with four cards' worth of room on it, so a window that shares nothing
+    // with the first exists to be found.
+    const wanted = requirementFor(5);
+    const wide = new GeneratedProvider().pick(seeded(7), {
+      ...wanted,
+      size: wanted.size * 2,
+      minFeatures: { landform: 16, point: 48, line: 8, area: 16 },
+    });
+    const ground = { map: wide.map, crop: { x: 0, y: 0, size: wanted.size } };
+    let worst = 0;
+    for (let seed = 0; seed < 30; seed++) {
+      const round = drill.generate(seeded(seed), 5, { maps: new Shelf(ground, 2, 1) });
+      worst = Math.max(worst, shared(round.cards[0], round.cards[1]));
+    }
+    expect(worst).toBe(0);
   });
 
   it('is still a function of the seed when it has to look twice', () => {
