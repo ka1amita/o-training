@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   contours as contoursDrill, requirementFor as contoursRequirement,
 } from '@/drills/contours/drill.ts';
+import { mapDiff } from '@/drills/mapDiff/drill.ts';
 import { mapMemory } from '@/drills/mapMemory/drill.ts';
 import { pexeso } from '@/drills/pexeso/drill.ts';
 import { hashJson, seeded } from '@/lib/rng.ts';
@@ -151,6 +152,46 @@ describe('the drills, on a map made of pixels', () => {
     // The base is untouched, which is what makes a variant a variant.
     expect(distractor.base.raster!.patches).toBeUndefined();
     expect(distractor.base.features).toHaveLength(0);
+  });
+
+  it('map vs reality changes it without ever removing what the picture draws', () => {
+    for (const level of [1, 5, 10]) {
+      for (let seed = 0; seed < 8; seed++) {
+        const round = mapDiff.generate(seeded(seed + level * 100), level, ctx);
+        expect(mapDiff.wellFormed(round), `level ${level} seed ${seed}`).toEqual([]);
+        for (const edit of round.edits) {
+          // **A remove or a swap on a picture would be a lie about what is on screen.**
+          // The blobs live in `analysis.moveable` because the image already draws them,
+          // and neither operation can reach them: `proposeRemoval` and `proposeSwap` both
+          // draw from `features`, which a picture has none of. So the vocabulary here is
+          // an added symbol drawn over the image and a blob cut and pasted — both of which
+          // the renderer really does show, which is the whole of what makes them answers.
+          expect(['add', 'move'], `level ${level} seed ${seed}`).toContain(edit.op);
+        }
+      }
+    }
+    // ...and a moved blob still leaves the two marks that make it visible.
+    const round = mapDiff.generate(seeded(305), 10, ctx);
+    const moved = round.edits.filter((e) => e.op === 'move');
+    if (moved.length > 0) {
+      const after = applyEdits(round.base, moved);
+      expect(after.raster!.patches).toHaveLength(moved.length);
+      expect(after.features.length).toBe(moved.length);
+    }
+  });
+
+  it('draws every change map vs reality made, over the picture and not in it', () => {
+    const round = mapDiff.generate(seeded(4), 10, ctx);
+    const shown = renderToStaticMarkup(
+      createElement(MapView, { map: applyEdits(round.base, round.edits), crop: round.crop }),
+    );
+    const before = renderToStaticMarkup(
+      createElement(MapView, { map: round.base, crop: round.crop }),
+    );
+    expect(shown).toContain('<image');
+    // The pixels are the same picture; what changed is symbols laid over it.
+    expect(shown).not.toBe(before);
+    expect(shown.split('<circle').length).toBeGreaterThan(before.split('<circle').length);
   });
 
   it('the contours drill declines it rather than asking an unanswerable question', () => {

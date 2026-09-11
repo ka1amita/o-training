@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { contours as contoursDrill } from '@/drills/contours/drill.ts';
+import { mapDiff } from '@/drills/mapDiff/drill.ts';
 import { mapDohledavka } from '@/drills/mapDohledavka/drill.ts';
 import { mapMemory } from '@/drills/mapMemory/drill.ts';
 import { pexeso, requirementFor as pexesoRequirement } from '@/drills/pexeso/drill.ts';
@@ -165,6 +166,19 @@ describe('every terrain drill, on an adjusted map', () => {
       for (let seed = 0; seed < SEEDS; seed++) {
         const round = mapDohledavka.generate(seeded(seed), level, ctx);
         expect(mapDohledavka.wellFormed(round), `level ${level} seed ${seed}`).toEqual([]);
+      }
+    }
+  });
+
+  it('map vs reality asks what changed on ground that has already been changed', () => {
+    // Two layers of enrichment, and they do not have to agree about anything: the adjusted
+    // window is the **base**, so the drill's own edits are the only answer key, and a
+    // symbol the provider put there is one more thing to look past.
+    for (const level of LEVELS) {
+      for (let seed = 0; seed < SEEDS; seed++) {
+        const round = mapDiff.generate(seeded(seed), level, ctx);
+        expect(mapDiff.wellFormed(round), `level ${level} seed ${seed}`).toEqual([]);
+        expect(round.base.adjusted).toBe(true);
       }
     }
   });
