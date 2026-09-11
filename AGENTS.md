@@ -741,6 +741,22 @@ dohledavka** above still holds except where this says otherwise.
   card, 3 mm leaves a median of 8.5 words a card on generated ground and 7 on a real
   window; 4 mm leaves 7 and **3**; ISOM's own 6 mm leaves 3 and 1. Five controls need nine
   words between two cards.
+- **A ring is closed and a `rings[]` entry does not say so.** A polygon's ring is a list of
+  vertices with no repeated point, and `MapView` draws every one of them with a `Z`, so the
+  side from the last vertex back to the first is ink like every other side. `outlineSites`
+  closes the ring and hangs circles on that side like any other; a test that measured
+  against `feature.geometry.rings[0]` as an open polyline then read one of them as a circle
+  on nothing (seed 4, level 1: 0.174 m off, found at `numRuns: 400` and not at 40). The
+  same slip in the shadow oracle is **silent** — a feature whose only ink in a circle is
+  its closing side reads as no shadow — so close the ring wherever one is measured, and
+  measure every ring rather than the outer one.
+- **A rule restated in a test has to be restated whole, and asked of ground that exercises
+  it.** Both oracles said "ground cover is an *area* of cover" where the rule says an area
+  of cover or either boundary line, 415 and 416. A generated map carries neither, so the
+  half about a line was never asked until `map dohledavka / on a surveyed map` ran the same
+  two oracles over the forest sample at fixed seeds. Restating rather than importing the
+  rule is right — a test that asks the rule about itself cannot catch the rule being wrong
+  — and it is only worth anything with ground under it that can tell the two apart.
 - **Two cards are never one window, and try not to be one hillside.** `LibraryProvider.pick`
   remembers nothing, so on a one-bundle library both cards landed on the same window about
   one round in eight — `wellFormed` said so and nothing acted on it. `second` redraws, and
