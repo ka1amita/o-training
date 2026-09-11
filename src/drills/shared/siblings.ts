@@ -5,8 +5,6 @@ import {
 } from '@/lib/terrain/edits.ts';
 import { positionOf, wholeMap, type Crop, type OMap } from '@/lib/terrain/omap.ts';
 
-export { plausibilityOf, type Plausibility } from '@/lib/terrain/edits.ts';
-
 /**
  * A map and its near-identical siblings, shuffled, with the target's index.
  *
