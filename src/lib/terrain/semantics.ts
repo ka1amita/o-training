@@ -63,7 +63,19 @@ export interface Semantics {
    * at the corner of a building is ordinary in both disciplines.
    */
   readonly barrierStrict?: boolean;
-  /** Can a control sit on it? */
+  /**
+   * Can a control sit on it?
+   *
+   * The IOF control descriptions are the list, and it is longer than the sixteen things
+   * the generator draws: a path bend, a clearing's corner, a wall, a stony-ground dot and
+   * a boulder are all of them feature a description can name. Which *part* of the symbol
+   * the circle goes on — a bend, a junction, an outline corner, never the middle of a
+   * meadow — is geometry and belongs to the drill, not here.
+   *
+   * What is deliberately **not** a site: the contour lines themselves (the landform is the
+   * feature, not the line that draws it), plain forest, and the out-of-bounds and course
+   * overprint, which are rules printed over a map rather than things on the ground.
+   */
   readonly controlSite?: boolean;
   /** Where this thing may legitimately be. */
   readonly ground?: GroundPreference;
@@ -211,7 +223,7 @@ export const SEMANTICS: Readonly<Record<IsomCode, Semantics>> = {
   },
   /** The single dot the broken-ground pattern is made of, which a surveyor also places
    *  alone. A point, so it is not the area above. */
-  '113.1': { code: '113.1', geometry: 'point', colour: 'brown', family: 'landform', minSizeMm: 0.4 },
+  '113.1': { code: '113.1', geometry: 'point', colour: 'brown', family: 'landform', controlSite: true, minSizeMm: 0.4 },
   '114': {
     code: '114', geometry: 'area', colour: 'brown', family: 'landform',
     runnability: 0.6, controlSite: true, minSizeMm: 1,
@@ -287,7 +299,7 @@ export const SEMANTICS: Readonly<Record<IsomCode, Semantics>> = {
     code: '210', geometry: 'area', colour: 'black', family: 'rock',
     runnability: 0.8, controlSite: true, minSizeMm: 1,
   },
-  '210.1': { code: '210.1', geometry: 'point', colour: 'black', family: 'rock', minSizeMm: 0.35 },
+  '210.1': { code: '210.1', geometry: 'point', colour: 'black', family: 'rock', controlSite: true, minSizeMm: 0.35 },
   '211': {
     code: '211', geometry: 'area', colour: 'black', family: 'rock',
     runnability: 0.6, controlSite: true, minSizeMm: 1,
@@ -369,65 +381,65 @@ export const SEMANTICS: Readonly<Record<IsomCode, Semantics>> = {
   // -------------------------------------------------------------------------------------
   '401': {
     code: '401', geometry: 'area', colour: 'yellow', family: 'vegetation',
-    runnability: 1, minSizeMm: 1,
+    runnability: 1, controlSite: true, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: OPEN_MAX },
   },
   '402': {
     code: '402', geometry: 'area', colour: 'yellow', family: 'vegetation',
-    runnability: 1, minSizeMm: 1,
+    runnability: 1, controlSite: true, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: OPEN_MAX },
   },
   '403': {
     code: '403', geometry: 'area', colour: 'yellow', family: 'vegetation',
-    runnability: 0.9, minSizeMm: 1,
+    runnability: 0.9, controlSite: true, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: OPEN_MAX },
   },
   '404': {
     code: '404', geometry: 'area', colour: 'yellow', family: 'vegetation',
-    runnability: 0.9, minSizeMm: 1,
+    runnability: 0.9, controlSite: true, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: OPEN_MAX },
   },
   '405': { code: '405', geometry: 'area', colour: 'white', family: 'vegetation', runnability: 1, minSizeMm: 1 },
   '406': {
     code: '406', geometry: 'area', colour: 'green', family: 'vegetation',
-    runnability: 0.7, minSizeMm: 1,
+    runnability: 0.7, controlSite: true, minSizeMm: 1,
     // Vegetation grows anywhere the ground is not a cliff.
     ground: { slope: 'flattest', quantile: VEGETATION_MAX },
   },
   '407': {
     code: '407', geometry: 'area', colour: 'green', family: 'vegetation',
-    runnability: 0.6, minSizeMm: 1,
+    runnability: 0.6, controlSite: true, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: VEGETATION_MAX },
   },
   '408': {
     code: '408', geometry: 'area', colour: 'green', family: 'vegetation',
-    runnability: 0.5, minSizeMm: 1,
+    runnability: 0.5, controlSite: true, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: VEGETATION_MAX },
   },
   '409': {
     code: '409', geometry: 'area', colour: 'green', family: 'vegetation',
-    runnability: 0.4, minSizeMm: 1,
+    runnability: 0.4, controlSite: true, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: VEGETATION_MAX },
   },
   '410': {
     code: '410', geometry: 'area', colour: 'green', family: 'vegetation',
-    runnability: 0.25, minSizeMm: 1,
+    runnability: 0.25, controlSite: true, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: VEGETATION_MAX },
   },
   /** 410.4 fight vegetation at its minimum width — a hedge, and under ISSprOM the
    *  impassable one every sprint map is full of. */
   '410.4': {
     code: '410.4', geometry: 'line', colour: 'green', family: 'vegetation',
-    runnability: 0, barrier: true, barrierStrict: true, minSizeMm: 0.25,
+    runnability: 0, barrier: true, barrierStrict: true, controlSite: true, minSizeMm: 0.25,
   },
   '411': {
     code: '411', geometry: 'area', colour: 'green', family: 'vegetation',
-    runnability: 0, barrier: true, barrierStrict: true, minSizeMm: 1,
+    runnability: 0, barrier: true, barrierStrict: true, controlSite: true, minSizeMm: 1,
   },
-  '412': { code: '412', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.9, minSizeMm: 1 },
-  '413': { code: '413', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.9, minSizeMm: 1 },
-  '414': { code: '414', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.7, minSizeMm: 1 },
-  '415': { code: '415', geometry: 'line', colour: 'black', family: 'vegetation', minSizeMm: 0.14 },
+  '412': { code: '412', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.9, controlSite: true, minSizeMm: 1 },
+  '413': { code: '413', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.9, controlSite: true, minSizeMm: 1 },
+  '414': { code: '414', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.7, controlSite: true, minSizeMm: 1 },
+  '415': { code: '415', geometry: 'line', colour: 'black', family: 'vegetation', controlSite: true, minSizeMm: 0.14 },
   '416': {
     code: '416', geometry: 'line', colour: 'green', family: 'vegetation',
     controlSite: true, minSizeMm: 0.25,
@@ -442,7 +454,7 @@ export const SEMANTICS: Readonly<Record<IsomCode, Semantics>> = {
   // Made by people. 2017-2 shifted the whole road ladder down one from ISOM 2000, which
   // is why the generator's 505 footpath was right all along and its 508 and 516 with it.
   // -------------------------------------------------------------------------------------
-  '501': { code: '501', geometry: 'area', colour: 'grey', family: 'manmade', runnability: 1, minSizeMm: 1 },
+  '501': { code: '501', geometry: 'area', colour: 'grey', family: 'manmade', runnability: 1, controlSite: true, minSizeMm: 1 },
   /**
    * ISSprOM's paved area with scattered trees.
    *
@@ -452,20 +464,20 @@ export const SEMANTICS: Readonly<Record<IsomCode, Semantics>> = {
    * structure, is *not*, because 2017-2's own `501.2` is a paved area's bounding line, so
    * that one is aliased onto plain paving instead of quietly redefining a number.
    */
-  '501.3': { code: '501.3', geometry: 'area', colour: 'grey', family: 'manmade', runnability: 1, minSizeMm: 1 },
-  '502': { code: '502', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.3 },
-  '503': { code: '503', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.35 },
-  '504': { code: '504', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.35 },
+  '501.3': { code: '501.3', geometry: 'area', colour: 'grey', family: 'manmade', runnability: 1, controlSite: true, minSizeMm: 1 },
+  '502': { code: '502', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, controlSite: true, minSizeMm: 0.3 },
+  '503': { code: '503', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, controlSite: true, minSizeMm: 0.35 },
+  '504': { code: '504', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, controlSite: true, minSizeMm: 0.35 },
   /** 505 footpath — the generator's `path`. */
-  '505': { code: '505', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.25 },
-  '506': { code: '506', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.18 },
-  '507': { code: '507', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.18 },
+  '505': { code: '505', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, controlSite: true, minSizeMm: 0.25 },
+  '506': { code: '506', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, controlSite: true, minSizeMm: 0.18 },
+  '507': { code: '507', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, controlSite: true, minSizeMm: 0.18 },
   /** 508 narrow ride — the generator's `ride`, and the standard's own meaning for the
    *  number since 2017. */
-  '508': { code: '508', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.14 },
-  '509': { code: '509', geometry: 'line', colour: 'black', family: 'manmade', runnability: 0.9, minSizeMm: 0.25 },
-  '510': { code: '510', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.14 },
-  '511': { code: '511', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.4 },
+  '508': { code: '508', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, controlSite: true, minSizeMm: 0.14 },
+  '509': { code: '509', geometry: 'line', colour: 'black', family: 'manmade', runnability: 0.9, controlSite: true, minSizeMm: 0.25 },
+  '510': { code: '510', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.14 },
+  '511': { code: '511', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.4 },
   '512': { code: '512', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.18 },
   /** 512.2 footbridge: a point, where 512 is the line a bridge or tunnel is drawn as. */
   '512.2': { code: '512.2', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
