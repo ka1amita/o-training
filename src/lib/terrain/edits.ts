@@ -1,12 +1,15 @@
 import type { Rng } from '@/lib/rng.ts';
 import { ISOM_SCALE } from './isom.ts';
-import { surroundOf, warpRaster } from './mask.ts';
+import { suitsOnMask, surroundOf, warpRaster } from './mask.ts';
 import {
   areasOf, boundsOf, insideCrop, movedTo, pointsOf, positionOf, translated,
-  type Crop, type Feature, type OMap, type Vec,
+  type Crop, type Feature, type OMap, type RasterLayer, type Vec,
 } from './omap.ts';
 import { warpDisplacement, type Relief, type Warp } from './relief.ts';
-import { CONTRAST, semanticsOf, SEMANTICS, type Family, type IsomCode } from './semantics.ts';
+import {
+  CONTRAST, semanticsOf, SEMANTICS, suits, type Family, type IsomCode,
+} from './semantics.ts';
+import { readGround, type Ground } from './terrain.ts';
 
 export type { Warp } from './relief.ts';
 
@@ -53,6 +56,43 @@ export interface EditSpec {
 export function applyEdits(map: OMap, edits: readonly Edit[]): OMap {
   return edits.reduce(applyOne, map);
 }
+
+/**
+ * What the map can be asked whether a symbol belongs somewhere.
+ *
+ * §3.3: same question, two backends. A height field answers it about the shape of the
+ * ground; a colour mask answers it about the ink. A map that has a relief is asked about
+ * the relief — it is the stronger claim, and it is the one the generator's own placement
+ * rules were written against — and a picture with no heights is asked about its mask.
+ *
+ * It lives here rather than beside `siblings` because it is not a fact about distractors:
+ * enrichment asks it of a symbol that is not on the map yet, and the discrepancy drill
+ * will ask it of the same edits again. One answer, whatever is asking.
+ */
+export type Plausibility =
+  | { readonly ground: Ground }
+  | { readonly raster: RasterLayer };
+
+/** Which backend this map offers, or none, in which case nothing is ever implausible. */
+export function plausibilityOf(map: OMap): Plausibility | null {
+  if (map.relief.kind !== 'none') return { ground: readGround(map.relief) };
+  if (map.raster) return { raster: map.raster };
+  // A flat map with no picture: `suits` would ask a height field of zeros for its
+  // steepest quarter and refuse every symbol that has an opinion, which is not a judgement
+  // about the ground, it is a judgement about there being none.
+  return null;
+}
+
+/**
+ * Whether this symbol belongs at this point, through whichever backend the map offers.
+ *
+ * A map with neither says yes: see `plausibilityOf`. Callers that must not place anything
+ * on a map that cannot be judged have to say so themselves — nothing does.
+ */
+export const suitsAt = (code: IsomCode, where: Plausibility | null, p: Vec): boolean =>
+  where === null ? true
+  : 'ground' in where ? suits(code, where.ground, p)
+  : suitsOnMask(code, where.raster, p);
 
 function applyOne(map: OMap, edit: Edit): OMap {
   switch (edit.op) {
@@ -360,7 +400,10 @@ export function difference(variant: Variant, crop: Crop): Difference {
     if (edit.op === 'add') {
       if (insideCrop(positionOf(edit.feature), crop)) visible = true;
       footprint += overlap(boundsOf(edit.feature), crop) / cropArea;
-      note(edit.feature.code);
+      // Its own drawn size, exactly as a moved or removed feature's is read below. An
+      // added symbol carries one, and ignoring it made a symbol that appears out of
+      // nowhere score lower than the same symbol merely sliding sideways.
+      note(edit.feature.code, edit.feature.size);
       continue;
     }
 

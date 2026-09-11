@@ -606,8 +606,14 @@ function runnabilityOf(map: OMap, size: number): number[] {
   return values;
 }
 
-/** Even-odd point in polygon, over every ring — holes cancel, which is what evenodd is. */
-function insidePolygon(p: Vec, feature: Feature): boolean {
+/**
+ * Even-odd point in polygon, over every ring — holes cancel, which is what evenodd is.
+ *
+ * Exported because `enrich.ts` asks the same question for a different reason: a boulder
+ * may not be added inside a lake or a building. One implementation, so the runnability
+ * raster and the plausibility rules cannot disagree about where an area is.
+ */
+export function insidePolygon(p: Vec, feature: Feature): boolean {
   if (feature.geometry.kind !== 'polygon') return false;
   let inside = false;
   for (const ring of feature.geometry.rings) {
