@@ -5,12 +5,15 @@ import { applyEdits } from '@/lib/terrain/edits.ts';
 import MapView from '@/lib/terrain/MapView.tsx';
 import type { MapMemoryAnswer, MapMemoryRound } from './drill.ts';
 
-const FEEDBACK_MS = 700;
+/** The drill's own two halves: the extract, then the choice. The review that follows a
+ *  choice is the session's phase, not this one. */
+type Exposure = 'showing' | 'choosing';
 
-type Phase = 'showing' | 'choosing';
-
-export default function Play({ round, onDone }: PlayProps<MapMemoryRound, MapMemoryAnswer>) {
-  const [phase, setPhase] = useState<Phase>('showing');
+export default function Play({
+  round, phase, answers, onDone,
+}: PlayProps<MapMemoryRound, MapMemoryAnswer>) {
+  const reviewing = phase === 'review';
+  const [exposure, setExposure] = useState<Exposure>('showing');
   const [remaining, setRemaining] = useState(round.exposureMs);
   const [picked, setPicked] = useState<number | null>(null);
 
@@ -19,23 +22,23 @@ export default function Play({ round, onDone }: PlayProps<MapMemoryRound, MapMem
     const id = window.setInterval(() => {
       const left = round.exposureMs - (performance.now() - startedAt);
       setRemaining(Math.max(0, left));
-      if (left <= 0) setPhase('choosing');
+      if (left <= 0) setExposure('choosing');
     }, 80);
     return () => window.clearInterval(id);
   }, [round]);
 
-  const choose = useCallback((index: number) => {
-    setPicked((current) => (current === null ? index : current));
-  }, []);
+  const choose = useCallback(
+    (index: number) => {
+      if (picked !== null) return;
+      setPicked(index);
+      // Reported on the tap. The pause that used to mark the pick is the review phase.
+      onDone([{ index, correct: index === round.correctIndex }]);
+    },
+    [picked, round.correctIndex, onDone],
+  );
 
-  useEffect(() => {
-    if (picked === null) return;
-    const id = window.setTimeout(
-      () => onDone([{ index: picked, correct: picked === round.correctIndex }]),
-      FEEDBACK_MS,
-    );
-    return () => window.clearTimeout(id);
-  }, [picked, round.correctIndex, onDone]);
+  // In review the pick is what was reported; local state is only the fallback.
+  const chosen = reviewing ? answers?.[0]?.index ?? picked : picked;
 
   const options = useMemo(
     () => round.variants.map((v) => applyEdits(v.base, v.edits)),
@@ -43,7 +46,7 @@ export default function Play({ round, onDone }: PlayProps<MapMemoryRound, MapMem
   );
   const answer = options[round.correctIndex]!;
 
-  if (phase === 'showing') {
+  if (exposure === 'showing') {
     return (
       <div className="flex flex-1 flex-col items-center gap-4">
         <div className="h-1 w-full overflow-hidden rounded-full bg-ink-soft" aria-hidden>
@@ -66,19 +69,24 @@ export default function Play({ round, onDone }: PlayProps<MapMemoryRound, MapMem
 
   return (
     <div className="flex flex-1 flex-col gap-3">
-      <p className="m-0 text-center text-sm text-muted">Which one was it?</p>
+      <p className="m-0 text-center text-sm text-muted">
+        {reviewing ? 'This one.' : 'Which one was it?'}
+      </p>
       <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0">
         {options.map((option, index) => {
+          // Marked only in review, and both ways round: the extract that was shown, and
+          // the one that was taken for it.
           const state =
-            picked === null ? 'idle'
+            !reviewing ? 'idle'
             : index === round.correctIndex ? 'right'
-            : index === picked ? 'wrong'
+            : index === chosen ? 'wrong'
             : 'idle';
           return (
             <li key={index}>
               <button
                 type="button"
                 onClick={() => choose(index)}
+                disabled={reviewing}
                 aria-label={`extract ${index + 1}`}
                 className={`relative block aspect-square w-full overflow-hidden rounded-lg border-2 transition-colors ${
                   state === 'right' ? 'border-good'

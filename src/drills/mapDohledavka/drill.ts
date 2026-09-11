@@ -255,6 +255,9 @@ export const mapDohledavka = defineDrill<MapDobbleRound, MapDobbleAnswer>({
   engine: 'terrain',
   bounds: { min: 1, max: 10 },
   roundsPerSession: 10,
+  // The round ends on the one right tap, and until it is marked on both cards the player
+  // has no way to see which pair of circles agreed.
+  review: true,
 
   generate(rng: Rng, level: number, ctx: RoundContext): MapDobbleRound {
     const { controls, size } = paramsFor(level);

@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 /**
  * The tick or cross laid over a chosen option.
  *
@@ -8,15 +10,30 @@
  *
  * The colour stays; this is the second encoding beside it.
  */
-export default function Verdict({ kind }: { kind: 'right' | 'wrong' }) {
+export default function Verdict({
+  kind,
+  className,
+  style,
+}: {
+  kind: 'right' | 'wrong';
+  /**
+   * Where it sits. The default is the corner of a card, which is what an option in a grid
+   * wears; a mark on a map belongs at the feature it is about, and the caller that knows
+   * those coordinates places it itself — in percentages of the window, which is a `style`
+   * and not a class.
+   */
+  className?: string;
+  style?: CSSProperties;
+}) {
   const right = kind === 'right';
   return (
     <span
       role="img"
       aria-label={right ? 'correct' : 'wrong'}
-      className={`pointer-events-none absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full ${
-        right ? 'bg-good' : 'bg-bad'
-      }`}
+      style={style}
+      className={`pointer-events-none flex h-6 w-6 items-center justify-center rounded-full ${
+        className ?? 'absolute right-1 top-1'
+      } ${right ? 'bg-good' : 'bg-bad'}`}
     >
       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="#1c1917" strokeWidth={3.5}
         strokeLinecap="round" strokeLinejoin="round" aria-hidden>

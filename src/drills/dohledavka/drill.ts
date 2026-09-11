@@ -119,6 +119,9 @@ export const dohledavka = defineDrill<DobbleRound, DobbleAnswer>({
   bounds: { min: 1, max: 10 },
   roundsPerSession: 12,
   multiplayer: true,
+  // Single player only: `MatchPage` runs its own rounds and shows the same reveal on a
+  // host-timed pause, because a two-player game cannot wait for either player to tap.
+  review: true,
 
   generate(rng: Rng, level: number): DobbleRound {
     const order = orderFor(level);

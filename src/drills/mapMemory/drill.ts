@@ -81,6 +81,9 @@ export const mapMemory = defineDrill<MapMemoryRound, MapMemoryAnswer>({
   engine: 'terrain',
   bounds: { min: 1, max: 10 },
   roundsPerSession: 10,
+  // One tap a round, and the extract is gone by then: the reveal is where the two
+  // candidates can finally be compared with the answer known.
+  review: true,
 
   generate(rng: Rng, level: number, ctx: RoundContext): MapMemoryRound {
     const params = paramsFor(level);

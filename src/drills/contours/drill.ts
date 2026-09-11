@@ -63,6 +63,9 @@ export const contours = defineDrill<ContoursRound, ContoursAnswer>({
   engine: 'terrain',
   bounds: { min: 1, max: 10 },
   roundsPerSession: 10,
+  // One tap a round: without a pause on the answer there is nothing to read the relief
+  // against afterwards, which is the whole of what this drill teaches.
+  review: true,
 
   generate(rng: Rng, level: number, ctx: RoundContext): ContoursRound {
     const picked = ctx.maps.pick(rng, requirementFor(level));
