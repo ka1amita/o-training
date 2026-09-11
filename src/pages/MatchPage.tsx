@@ -14,8 +14,21 @@ import { createHost, joinWithCode, CONNECT_TIMEOUT_MS, type HostSide, type Joine
 
 const ROUNDS = 10;
 const LEVEL = 5;
-/** How long the result stays up before the host moves on. */
-const RESULT_MS = 1400;
+/**
+ * How long the decided round stays up — the shared symbol marked on both cards — before
+ * the host moves on.
+ *
+ * The single-player drill waits for a tap on Continue; a match cannot. Two players are
+ * looking at two screens and neither of them owns the round, so a confirmation would be
+ * one player holding the other up, and one who never taps would end the game. The host
+ * times it instead, sends the same `next` it always sent, and both screens move together
+ * — the joiner's reveal is this window plus the hop, which is the latency it already pays
+ * for every outcome.
+ *
+ * One constant, and it is short: long enough to see which symbol it was, not long enough
+ * to be a pause between rounds.
+ */
+const REVEAL_MS = 1500;
 
 type Mode = 'lobby' | 'split' | 'host' | 'join';
 
@@ -192,12 +205,16 @@ function SplitMatch({ providerId, onLeave }: { providerId: string; onLeave: () =
 
   useEffect(() => {
     if (state.winner === null || state.finished) return;
-    const id = window.setTimeout(() => dispatch({ type: 'advance' }), RESULT_MS);
+    const id = window.setTimeout(() => dispatch({ type: 'advance' }), REVEAL_MS);
     return () => window.clearTimeout(id);
   }, [state.winner, state.finished, dispatch]);
 
   if (state.finished) return <Over state={state} youAre="both" onLeave={onLeave} />;
   if (!round) return null;
+
+  // A decided round is a round being looked at. Nothing was picked wrongly — a match
+  // reports only the tap that took it — so the reveal is the shared symbol and no crosses.
+  const reveal = state.winner === null ? null : { shared: round.shared, wrong: [] };
 
   const half = (side: Side) => (
     <div
@@ -207,6 +224,9 @@ function SplitMatch({ providerId, onLeave }: { providerId: string; onLeave: () =
         <CardView
           key={i}
           card={card}
+          // Both halves see the same reveal at the same moment: one device, one round,
+          // and the player who missed it is the one it is for.
+          review={reveal}
           onTap={(symbolId) => {
             if (symbolId === round.shared) dispatch({ type: 'found', by: side });
           }}
@@ -243,7 +263,7 @@ function OnlineMatch({
 
   useEffect(() => {
     if (youAre !== 'host' || state.winner === null || state.finished) return;
-    const id = window.setTimeout(() => dispatch({ type: 'advance' }), RESULT_MS);
+    const id = window.setTimeout(() => dispatch({ type: 'advance' }), REVEAL_MS);
     return () => window.clearTimeout(id);
   }, [youAre, state.winner, state.finished, dispatch]);
 
@@ -266,6 +286,12 @@ function OnlineMatch({
           <CardView
             key={i}
             card={card}
+            // The host sets `winner` when it awards the round and the joiner when the
+            // `result` arrives, so both screens mark the symbol off their own state and
+            // neither of them waits for the other to say what to draw.
+            review={
+              state.winner === null ? null : { shared: round.shared, wrong: [] }
+            }
             onTap={(symbolId) => {
               if (symbolId === round.shared) dispatch({ type: 'found' });
             }}
