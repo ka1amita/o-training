@@ -883,6 +883,31 @@ function candidatesOf(map: OMap, crop: Crop, radius: number): Candidates {
  * decides it: a real window at 4 mm is two circles where the level asks for five.
  */
 export function sitesOf(map: OMap, crop: Crop, radius: number): Site[] {
+  const key = `${crop.x}:${crop.y}:${crop.size}:${radius}`;
+  const known = siteLists.get(map)?.get(key);
+  if (known) return known;
+  const found = siteSearch(map, crop, radius);
+  const perMap = siteLists.get(map) ?? new Map<string, Site[]>();
+  perMap.set(key, found);
+  siteLists.set(map, perMap);
+  return found;
+}
+
+/**
+ * The sites of one window, remembered — the same bargain `drawnExtents` makes above.
+ *
+ * A pure function of an immutable map, and a round asks it the same question many times
+ * over: `generate` drafts up to ten pairs of cards and redraws the second of each up to
+ * five times, and `wellFormed` then asks again for both cards it kept. Measured at level
+ * 10 on the forest sample, that is 48 windows scored a round where the library has eight
+ * to offer — 325 ms of a phone's time to answer the same eight questions six times each.
+ *
+ * Nothing it hands back is ever written to: `byKind` copies into a list per kind, and the
+ * search shuffles those copies rather than this.
+ */
+const siteLists = new WeakMap<OMap, Map<string, Site[]>>();
+
+function siteSearch(map: OMap, crop: Crop, radius: number): Site[] {
   const { named, sites } = candidatesOf(map, crop, radius);
   const own = new Map<string, Named>();
   for (const n of named) if (!own.has(n.source)) own.set(n.source, n);
