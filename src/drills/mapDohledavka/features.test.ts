@@ -206,12 +206,31 @@ describe('sites on an area', () => {
 
   it('takes the middle of a short side', () => {
     // A yard 70 m across: four corners, and four sides short enough for a middle.
-    const sites = sitesOf(ground({ features: [area('521', box(115, 115, 70, 70))] }), WHOLE, RADIUS);
+    const ring = box(115, 115, 70, 70);
+    const sites = sitesOf(ground({ features: [area('521', ring)] }), WHOLE, RADIUS);
     expect(sites.filter((s) => s.where === 'corner')).toHaveLength(4);
     expect(sites.filter((s) => s.where === 'side')).toHaveLength(4);
     for (const site of sites) {
       expect(clearanceFrom({ shape: site.shape, reach: 0 }, site.at)).toBeLessThan(0.001);
     }
+  });
+
+  it('counts the side from the last vertex back to the first', () => {
+    // A ring is a list of vertices and is **closed** — `MapView` draws every one of them
+    // with a `Z` — so the side that runs from the last back to the first is ink like the
+    // other three, and a circle on it is a circle on the outline. Read as an open
+    // polyline the ring loses that side entirely, which is how a site on it looked like a
+    // site on nothing.
+    const ring = box(115, 115, 70, 70);
+    const middle = { x: 115, y: 150 };
+    const sites = sitesOf(ground({ features: [area('521', ring)] }), WHOLE, RADIUS);
+    const onClosingSide = sites.find(
+      (s) => Math.hypot(s.at.x - middle.x, s.at.y - middle.y) < 0.001,
+    );
+    expect(onClosingSide?.where).toBe('side');
+    expect(clearanceFrom({ shape: [...ring, ring[0]!], reach: 0 }, middle)).toBeLessThan(0.001);
+    // The trap, stated: the same ring left open puts it 35 m from the nearest side.
+    expect(clearanceFrom({ shape: ring, reach: 0 }, middle)).toBeGreaterThan(30);
   });
 
   it('does not let a wash under a ring block what is standing in it', () => {
@@ -379,14 +398,27 @@ describe('the ring rule', () => {
             const word = wordFor(feature.code);
             const semantics = semanticsOf(feature.code);
             if (!word || word === site.kind) continue;
-            // The two exemptions, stated here as the rule and not as the code.
-            if (feature.geometry.kind === 'polygon' && GROUND_COVER.has(word)) continue;
+            // The two exemptions, stated here as the rule and not as the code. Cover is an
+            // area of it, or either boundary line — a cover area's edge drawn a second
+            // time.
+            const cover = GROUND_COVER.has(word)
+              && (feature.geometry.kind === 'polygon' || word === 'vegetationBoundary');
+            if (cover) continue;
             if (feature.geometry.kind === 'point' && semantics?.reliefBound) continue;
-            const shape =
-              feature.geometry.kind === 'point' ? [feature.geometry.at]
-              : feature.geometry.kind === 'polyline' ? feature.geometry.points
-              : feature.geometry.rings[0]!;
-            if (clearanceFrom({ shape, reach: 0 }, site.at) < radius) words.add(word);
+            // Every ring, **closed**: `MapView` draws each one with a `Z`, so the side
+            // from the last vertex back to the first is ink like every other side. A ring
+            // measured as an open polyline hides both a site on that side and a shadow
+            // cast from it.
+            const shapes =
+              feature.geometry.kind === 'point' ? [[feature.geometry.at]]
+              : feature.geometry.kind === 'polyline' ? [feature.geometry.points]
+              : feature.geometry.rings.map((ring) => {
+                  const first = ring[0]!;
+                  const last = ring[ring.length - 1]!;
+                  return first.x === last.x && first.y === last.y ? ring : [...ring, first];
+                });
+            const near = shapes.some((shape) => clearanceFrom({ shape, reach: 0 }, site.at) < radius);
+            if (near) words.add(word);
           }
           expect([...words]).toEqual([site.kind]);
         }

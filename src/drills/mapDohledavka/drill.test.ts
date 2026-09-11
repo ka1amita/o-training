@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { GeneratedProvider, type MapProvider, type RoundContext } from '@/lib/maps/provider.ts';
+import { loadBundle } from '@/lib/maps/bundle.ts';
+import {
+  GeneratedProvider, LibraryProvider, type MapProvider, type RoundContext,
+} from '@/lib/maps/provider.ts';
 import { hashJson, seeded, type Rng } from '@/lib/rng.ts';
 import type { Crop, Feature, OMap, Vec } from '@/lib/terrain/omap.ts';
 import { semanticsOf } from '@/lib/terrain/semantics.ts';
@@ -51,17 +55,30 @@ const maps: RoundContext = { maps: new GeneratedProvider() };
 const gen = (seed: number, level: number) => drill.generate(seeded(seed), level, maps);
 
 /**
- * The shape a feature is drawn as, whatever its geometry — one point, a line, or the ring
- * of an outline. The tests below ask the map directly rather than through `sitesOf`.
+ * The shapes a feature is drawn as: one point, a line, or **every ring of an outline,
+ * closed**.
+ *
+ * A `Geometry`'s rings are implicitly closed — `MapView` draws each of them with a `Z`, so
+ * the side from the last vertex back to the first is ink like every other side — and a
+ * ring carried as an open list of vertices is a trap this file fell into: measuring
+ * against it as a polyline never walks that side, so a circle on it reads as a circle on
+ * nothing, and a feature shadowing a ring from it reads as no shadow at all. Both
+ * properties below were wrong in the same place, the second one silently.
  */
-const shapeOf = (feature: Feature): readonly Vec[] =>
-  feature.geometry.kind === 'point' ? [feature.geometry.at]
-  : feature.geometry.kind === 'polyline' ? feature.geometry.points
-  : feature.geometry.rings[0]!;
+const shapesOf = (feature: Feature): readonly (readonly Vec[])[] => {
+  const { geometry } = feature;
+  if (geometry.kind === 'point') return [[geometry.at]];
+  if (geometry.kind === 'polyline') return [geometry.points];
+  return geometry.rings.map((ring) => {
+    const first = ring[0]!;
+    const last = ring[ring.length - 1]!;
+    return first.x === last.x && first.y === last.y ? ring : [...ring, first];
+  });
+};
 
 /** How far the drawn thing is from `p`, which is zero anywhere on it. */
 const distanceTo = (feature: Feature, p: Vec): number =>
-  clearanceFrom({ shape: shapeOf(feature), reach: 0 }, p);
+  Math.min(...shapesOf(feature).map((shape) => clearanceFrom({ shape, reach: 0 }, p)));
 
 /**
  * The words on this map that a ring at `p` would hold, ignoring the drill's own view.
@@ -76,16 +93,43 @@ const GROUND_COVER = new Set<ControlKind>([
   'stonyGround', 'sandyGround', 'rock', 'marsh', 'paved', 'vegetationBoundary',
 ]);
 
+/** Cover is an area of it — and either boundary line, which is a cover area's edge drawn
+ *  a second time. A generated map has no 415 or 416 on it, so only the forest sample
+ *  below asks this half of the question. */
+const isCover = (feature: Feature, word: ControlKind): boolean =>
+  GROUND_COVER.has(word)
+  && (feature.geometry.kind === 'polygon' || word === 'vegetationBoundary');
+
 function wordsInRing(map: OMap, p: Vec, radius: number): Set<ControlKind> {
   const words = new Set<ControlKind>();
   for (const feature of map.features) {
     const word = wordFor(feature.code);
     if (!word) continue;
-    if (feature.geometry.kind === 'polygon' && GROUND_COVER.has(word)) continue;
+    if (isCover(feature, word)) continue;
     if (semanticsOf(feature.code)?.reliefBound && feature.geometry.kind === 'point') continue;
     if (distanceTo(feature, p) < radius) words.add(word);
   }
   return words;
+}
+
+/** Every circle is on the thing its word names, or on a landform candidate of that name. */
+function circlesOnNothing(round: MapDobbleRound): string[] {
+  const wrong: string[] = [];
+  for (const card of round.cards) {
+    for (const control of card.controls) {
+      const at = { x: control.x, y: control.y };
+      const drawn = card.map.features.some(
+        (f) => wordFor(f.code) === control.kind && distanceTo(f, at) < 0.001,
+      );
+      const relief = (card.map.analysis?.landforms ?? []).some(
+        (f) =>
+          f.kind === control.kind &&
+          Math.hypot(f.centre.x - control.x, f.centre.y - control.y) <= f.radius,
+      );
+      if (!drawn && !relief) wrong.push(`${control.kind} at ${control.x}, ${control.y}`);
+    }
+  }
+  return wrong;
 }
 
 describe('map dohledavka / generate', () => {
@@ -115,29 +159,39 @@ describe('map dohledavka / generate', () => {
   it('circles a feature the map really has', () => {
     // The one rule: the answer comes from the round's structure. A circle whose kind is
     // not what the terrain put there would be a question the card cannot answer, and
-    // this asks the terrain directly rather than through `sitesOf`.
+    // this asks the terrain directly rather than through `sitesOf` — the circle is **on**
+    // the thing, whatever it is drawn as: the point itself, a place on the line, a place
+    // on the outline.
     fc.assert(
       fc.property(anySeed, anyLevel, (seed, level) => {
-        const round = gen(seed, level);
-        for (const card of round.cards) {
-          for (const control of card.controls) {
-            const at = { x: control.x, y: control.y };
-            // Drawn: the circle is **on** the thing, whatever it is drawn as — the point
-            // itself, a place on the line, a place on the outline.
-            const drawn = card.map.features.some(
-              (f) => wordFor(f.code) === control.kind && distanceTo(f, at) < 0.001,
-            );
-            const relief = (card.map.analysis?.landforms ?? []).some(
-              (f) =>
-                f.kind === control.kind &&
-                Math.hypot(f.centre.x - control.x, f.centre.y - control.y) <= f.radius,
-            );
-            expect(drawn || relief, `${control.kind} at ${control.x},${control.y}`).toBe(true);
-          }
-        }
+        expect(circlesOnNothing(gen(seed, level))).toEqual([]);
       }),
       { numRuns: 40 },
     );
+  });
+
+  it('circles a closing side too — seed 4, level 1', () => {
+    // The seed that caught the oracle above. Card 2 of this round hangs a thicket circle
+    // 0.17 m along the side that runs from an area's twenty-eighth vertex back to its
+    // first: a generated outline is a list of vertices with no repeated point, so that
+    // side exists only once the ring is closed. `MapView` closes it, the drill closes it,
+    // and the property here did not. Fixed seed rather than a property, because what is
+    // being pinned is one round that reads as a circle on nothing.
+    const round = gen(4, 1);
+    expect(circlesOnNothing(round)).toEqual([]);
+
+    // And the circle in question is on the closing side and nowhere else on the ring.
+    const onClosingSide = round.cards.flatMap((card) =>
+      card.controls.filter((control) =>
+        card.map.features.some((f) => {
+          if (f.geometry.kind !== 'polygon' || wordFor(f.code) !== control.kind) return false;
+          const at = { x: control.x, y: control.y };
+          return distanceTo(f, at) < 0.001
+            && f.geometry.rings.every((ring) => clearanceFrom({ shape: ring, reach: 0 }, at) > 0.001);
+        }),
+      ),
+    );
+    expect(onClosingSide.map((c) => c.kind)).toEqual(['thicket']);
   });
 
   it('leaves nothing else nameable inside a ring', () => {
@@ -314,6 +368,46 @@ describe('map dohledavka / generate', () => {
     // A drill whose answer is a boulder four times in five is a drill about boulders.
     const shared = new Set(Array.from({ length: 80 }, (_, s) => gen(s, 6).shared));
     expect(shared.size).toBeGreaterThan(6);
+  });
+});
+
+/**
+ * The same two rules, on the ground the drill is now mostly aimed at.
+ *
+ * `public/maps/forest-sample.json` is the dev fixture `library.test.ts` documents:
+ * Mapper's own example through `scripts/import-map.mjs`. It is here because the two
+ * oracles above are restatements of the rule, and a restatement can only be checked
+ * against ground that exercises it — a generated map carries no 415, no 416, no building
+ * and no road, so the half of the cover rule that is about a *line* was untested until
+ * this ran, and one oracle was quietly wrong about it. Fixed seeds and every level, since
+ * the ground is fixed too.
+ */
+describe('map dohledavka / on a surveyed map', () => {
+  const bundle = JSON.parse(
+    readFileSync(new URL('../../../public/maps/forest-sample.json', import.meta.url), 'utf8'),
+  ) as Parameters<typeof loadBundle>[0];
+  const library: RoundContext = { maps: new LibraryProvider([loadBundle(bundle)]) };
+  const rounds = Array.from({ length: 8 }, (_, seed) =>
+    [1, 5, 10].map((level) => drill.generate(seeded(seed), level, library)),
+  ).flat();
+
+  it('is well formed, and every circle is on the thing it names', () => {
+    for (const round of rounds) {
+      expect(drill.wellFormed(round)).toEqual([]);
+      expect(circlesOnNothing(round)).toEqual([]);
+    }
+  });
+
+  it('leaves nothing else nameable inside a ring', () => {
+    for (const round of rounds) {
+      for (const card of round.cards) {
+        for (const control of card.controls) {
+          const words = wordsInRing(card.map, { x: control.x, y: control.y }, round.radius);
+          words.delete(control.kind);
+          expect([...words], `beside the ${control.kind}`).toEqual([]);
+        }
+      }
+    }
   });
 });
 
