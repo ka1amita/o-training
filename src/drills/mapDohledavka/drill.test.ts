@@ -2,25 +2,55 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
 import { hashJson, seeded } from '@/lib/rng.ts';
-import { areasOf, linesOf, pointsOf, positionOf, type OMap } from '@/lib/terrain/omap.ts';
-import { CODE_OF } from '@/lib/terrain/semantics.ts';
+import type { Feature, OMap, Vec } from '@/lib/terrain/omap.ts';
+import { semanticsOf } from '@/lib/terrain/semantics.ts';
 import {
   mapDohledavka as drill, paramsFor, CIRCLE_FRACTION,
   type Control, type MapDobbleRound,
 } from './drill.ts';
-import { CONTROL_NAMES, type ControlKind } from './features.ts';
+import { clearanceFrom, wordFor, type ControlKind } from './features.ts';
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: drill.bounds.min, max: drill.bounds.max });
 const maps: RoundContext = { maps: new GeneratedProvider() };
 const gen = (seed: number, level: number) => drill.generate(seeded(seed), level, maps);
 
-/** Where the map itself says a feature of this kind is, ignoring the drill's own view. */
-function positionsOf(map: OMap, kind: ControlKind): { x: number; y: number }[] {
-  const code = CODE_OF[kind as keyof typeof CODE_OF];
-  return [...pointsOf(map), ...areasOf(map)]
-    .filter((f) => f.code === code)
-    .map(positionOf);
+/**
+ * The shape a feature is drawn as, whatever its geometry — one point, a line, or the ring
+ * of an outline. The tests below ask the map directly rather than through `sitesOf`.
+ */
+const shapeOf = (feature: Feature): readonly Vec[] =>
+  feature.geometry.kind === 'point' ? [feature.geometry.at]
+  : feature.geometry.kind === 'polyline' ? feature.geometry.points
+  : feature.geometry.rings[0]!;
+
+/** How far the drawn thing is from `p`, which is zero anywhere on it. */
+const distanceTo = (feature: Feature, p: Vec): number =>
+  clearanceFrom({ shape: shapeOf(feature), reach: 0 }, p);
+
+/**
+ * The words on this map that a ring at `p` would hold, ignoring the drill's own view.
+ *
+ * The two exemptions are restated here rather than imported, because a test that asks the
+ * rule about itself cannot catch the rule being wrong: **ground cover** is the wash under
+ * everything and not a thing standing in it, and a **form of the ground** does not shadow
+ * the symbol that names it.
+ */
+const GROUND_COVER = new Set<ControlKind>([
+  'open', 'thicket', 'cultivated', 'brokenGround', 'boulderField',
+  'stonyGround', 'sandyGround', 'rock', 'marsh', 'paved', 'vegetationBoundary',
+]);
+
+function wordsInRing(map: OMap, p: Vec, radius: number): Set<ControlKind> {
+  const words = new Set<ControlKind>();
+  for (const feature of map.features) {
+    const word = wordFor(feature.code);
+    if (!word) continue;
+    if (feature.geometry.kind === 'polygon' && GROUND_COVER.has(word)) continue;
+    if (semanticsOf(feature.code)?.reliefBound && feature.geometry.kind === 'point') continue;
+    if (distanceTo(feature, p) < radius) words.add(word);
+  }
+  return words;
 }
 
 describe('map dohledavka / generate', () => {
@@ -56,21 +86,18 @@ describe('map dohledavka / generate', () => {
         const round = gen(seed, level);
         for (const card of round.cards) {
           for (const control of card.controls) {
-            const exact = positionsOf(card.map, control.kind).some(
-              (p) => p.x === control.x && p.y === control.y,
-            );
-            const online = linesOf(card.map).some(
-              (line) =>
-                line.code === CODE_OF[control.kind as keyof typeof CODE_OF] &&
-                line.geometry.kind === 'polyline' &&
-                line.geometry.points.some((p) => p.x === control.x && p.y === control.y),
+            const at = { x: control.x, y: control.y };
+            // Drawn: the circle is **on** the thing, whatever it is drawn as — the point
+            // itself, a place on the line, a place on the outline.
+            const drawn = card.map.features.some(
+              (f) => wordFor(f.code) === control.kind && distanceTo(f, at) < 0.001,
             );
             const relief = (card.map.analysis?.landforms ?? []).some(
               (f) =>
                 f.kind === control.kind &&
                 Math.hypot(f.centre.x - control.x, f.centre.y - control.y) <= f.radius,
             );
-            expect(exact || online || relief).toBe(true);
+            expect(drawn || relief, `${control.kind} at ${control.x},${control.y}`).toBe(true);
           }
         }
       }),
@@ -86,13 +113,9 @@ describe('map dohledavka / generate', () => {
         const round = gen(seed, level);
         for (const card of round.cards) {
           for (const control of card.controls) {
-            for (const kind of Object.keys(CONTROL_NAMES) as ControlKind[]) {
-              if (kind === control.kind) continue;
-              for (const other of positionsOf(card.map, kind)) {
-                expect(Math.hypot(other.x - control.x, other.y - control.y))
-                  .toBeGreaterThanOrEqual(round.radius);
-              }
-            }
+            const words = wordsInRing(card.map, { x: control.x, y: control.y }, round.radius);
+            words.delete(control.kind);
+            expect([...words], `beside the ${control.kind}`).toEqual([]);
           }
         }
       }),
@@ -232,8 +255,13 @@ describe('map dohledavka / determinism', () => {
       shared: round.shared,
       radius: round.radius,
     });
+    // **Re-pinned once, deliberately**, by the commit that made the answer space the
+    // semantic table's: every `controlSite` code now has a word, a line is circled at its
+    // junctions and ends as well as its bends, an area at its outline and never in the
+    // middle of itself, and the ring rule is by word. Every candidate the drill has to
+    // choose from moved, so the rounds did.
     const rounds = [1, 2].flatMap((s) => [1, 5, 9].map((l) => golden(gen(s, l))));
-    expect(hashJson(rounds)).toMatchInlineSnapshot(`"4a0dbebe"`);
+    expect(hashJson(rounds)).toMatchInlineSnapshot(`"26eb6a53"`);
   });
 });
 
