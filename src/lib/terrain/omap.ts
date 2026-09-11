@@ -52,13 +52,6 @@ export interface OMap {
 }
 
 /**
- * What a map says about itself.
- *
- * `licence` and `attribution` cost nothing and are what a member-tier product needs the
- * day a map owner asks. `scale` is the scale the cartography was drawn for — the renderer
- * does not read it, import and salience do.
- */
-/**
  * Which discipline a map was drawn for.
  *
  * Not decoration: it is what makes `Semantics.barrierStrict` mean something. An
@@ -68,6 +61,13 @@ export interface OMap {
  */
 export type MapType = 'forest' | 'sprint';
 
+/**
+ * What a map says about itself.
+ *
+ * `licence` and `attribution` cost nothing and are what a member-tier product needs the
+ * day a map owner asks. `scale` is the scale the cartography was drawn for — the renderer
+ * does not read it, import and salience do.
+ */
 export interface MapMeta {
   readonly name: string;
   readonly scale: number;
