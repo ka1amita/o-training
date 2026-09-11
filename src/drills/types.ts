@@ -24,11 +24,31 @@ export interface DrillMeta {
   readonly roundsPerSession: number;
   /** Whether the drill offers a second player (split screen or peer-to-peer). */
   readonly multiplayer?: boolean;
+  /**
+   * Whether a round stops on its answer before the next one.
+   *
+   * Opt-in, and it is the single-attempt drills that opt in: one tap, one verdict, and
+   * nothing on screen afterwards to learn from unless the round waits. A drill that marks
+   * every tap as it goes — Match Madness, Pexeso — already answers the question the
+   * reveal would answer, and `DrillPage` confirms those rounds for them.
+   */
+  readonly review?: boolean;
 }
+
+/** `play` while the round is being answered, `review` while its answer is on screen. */
+export type PlayPhase = 'play' | 'review';
 
 export interface PlayProps<Round, Answer> {
   readonly round: Round;
   readonly level: number;
+  /**
+   * The same `Play`, and the same instance: the reveal is the round with its answer
+   * shown, not a second screen. In `review` a drill marks the right answer and the pick
+   * that was made, and takes no more input — `DrillPage` owns the way out.
+   */
+  readonly phase: PlayPhase;
+  /** What the round was answered with. Present in `review`, and only there. */
+  readonly answers?: readonly Answer[] | undefined;
   /** Called once, when the round is over. */
   onDone(answers: Answer[]): void;
 }

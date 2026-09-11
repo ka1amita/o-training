@@ -8,7 +8,7 @@ import {
 import type { RoundContext } from '@/lib/maps/provider.ts';
 import { seeded } from '@/lib/rng.ts';
 import {
-  currentSeed, reduce, start, summarise,
+  awaitingContinue, currentSeed, reduce, start, summarise,
   type SessionEvent, type SessionState,
 } from '@/lib/session.ts';
 import { idb, loadProgress, saveSession } from '@/lib/store.ts';
@@ -146,16 +146,45 @@ function RunningSession({ drill, ready }: { drill: AnyDrill; ready: Ready }) {
 
   const badge = useMemo(() => sourceBadge(mapsOfRound(round)), [round]);
 
+  // What the drill reported, kept only so `Play` can mark it during the reveal. The score
+  // is the session's; this is the pick, and the session has no business holding it.
+  const [reported, setReported] = useState<readonly unknown[] | null>(null);
+
   const onDone = useCallback(
     (answers: unknown[]) => {
-      // One clock reading for both: the response time is taken at the answer, and the
-      // next round's starts where this one ends.
+      // One clock reading: the response time is taken here, whenever the player gets
+      // round to confirming.
       const at = Date.now();
       dispatch({ type: 'answered', score: drill.score(round, answers), at });
-      dispatch({ type: 'continue', at });
+      if (drill.review) setReported(answers);
+      // A drill that marks its own taps confirms itself. Asking for a tap to move on
+      // after Match Madness has already gone green would be two answers to one question,
+      // and its rounds are one item each — the reveal is for the single-attempt drills.
+      else dispatch({ type: 'continue', at });
     },
     [drill, round],
   );
+
+  const reviewing = awaitingContinue(state);
+  const confirm = useCallback(() => {
+    setReported(null);
+    dispatch({ type: 'continue', at: Date.now() });
+  }, []);
+
+  // Enter and space as well as the button, because the phone is not the only way in and
+  // a reveal is read with a thumb on the same spot. The button has focus, so this is
+  // really for a key pressed while focus is elsewhere; `continue` is idempotent, so the
+  // two paths arriving together still advance one round.
+  useEffect(() => {
+    if (!reviewing) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      confirm();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [reviewing, confirm]);
 
   const summary = summarise(state);
   useEffect(() => {
@@ -218,8 +247,29 @@ function RunningSession({ drill, ready }: { drill: AnyDrill; ready: Ready }) {
       {notice && <p className="m-0 pb-2 text-xs text-muted">{notice}</p>}
       {/* Keyed by round: Play holds per-round state (what is matched, whether it has
           reported) in refs, and without a fresh instance the second round would start
-          already finished. */}
-      <drill.Play key={state.index} round={round} level={level} onDone={onDone} />
+          already finished. The key is the round index and not the phase — the reveal is
+          the same instance with its answer shown, and remounting it would throw away the
+          pick it is supposed to be showing. */}
+      <drill.Play
+        key={state.index}
+        round={round}
+        level={level}
+        phase={reviewing ? 'review' : 'play'}
+        answers={reported ?? undefined}
+        onDone={onDone}
+      />
+      {reviewing && (
+        <button
+          type="button"
+          // Focused on arrival, so the keyboard needs no aim and a screen reader lands on
+          // the way out rather than on a grid that no longer takes taps.
+          autoFocus
+          onClick={confirm}
+          className="mt-3 w-full shrink-0 rounded-lg border border-flag bg-flag px-4 py-4 text-base font-semibold text-ink"
+        >
+          Continue
+        </button>
+      )}
     </div>
   );
 }
