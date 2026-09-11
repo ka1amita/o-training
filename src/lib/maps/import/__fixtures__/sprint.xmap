@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A hand-written sprint map, drawn to ISSprOM 2019 and small enough to check by hand.
+     It exists for the alias layer rather than for the parser: every symbol on it is one
+     whose number or whose meaning differs from ISOM 2017-2, which is the canon the app
+     keeps. 410 is impassable vegetation here and merely fight under ISOM; a paved area is
+     an area with a footprint where ISOM has a ladder of lines; and 513.2, a passable
+     retained wall, is a symbol ISOM has no number for at all.
+
+     The symbol names are Mapper's own, because `detectSymbolSet` falls back to reading
+     them when a file does not name its set — and the test strips the set id to prove it
+     does. -->
+<map xmlns="http://openorienteering.org/apps/mapper/xml/v2" version="9">
+    <georeferencing scale="4000">
+        <projected_crs id="Local"/>
+    </georeferencing>
+    <colors count="5">
+        <color priority="0" name="Black" c="0" m="0" y="0" k="1" opacity="1"/>
+        <color priority="1" name="Green" c="0.76" m="0" y="0.91" k="0" opacity="1"/>
+        <color priority="2" name="Brown" c="0" m="0.56" y="1" k="0.18" opacity="1"/>
+        <color priority="3" name="Grey" c="0" m="0" y="0" k="0.3" opacity="1"/>
+        <color priority="4" name="Olive" c="0.35" m="0" y="1" k="0" opacity="1"/>
+    </colors>
+    <barrier version="6" required="0.6.0">
+        <symbols count="13" id="ISSprOM 2019">
+            <symbol type="1" id="0" code="112" name="Pit or hole">
+                <point_symbol inner_radius="375" inner_color="2" outer_color="-1" elements="0"/>
+            </symbol>
+            <symbol type="2" id="1" code="202" name="Passable rock face, small (rounded ends, no tags)">
+                <line_symbol color="0" line_width="250"/>
+            </symbol>
+            <symbol type="4" id="2" code="410" name="Impassable vegetation">
+                <area_symbol inner_color="1" min_area="0" patterns="0"/>
+            </symbol>
+            <symbol type="2" id="3" code="410.1" name="Impassable vegetation, minimum width (hedge)">
+                <line_symbol color="1" line_width="250"/>
+            </symbol>
+            <symbol type="2" id="4" code="515" name="Impassable wall">
+                <line_symbol color="0" line_width="250"/>
+            </symbol>
+            <symbol type="2" id="5" code="513.1" name="Passable wall">
+                <line_symbol color="0" line_width="140"/>
+            </symbol>
+            <symbol type="2" id="6" code="513.2" name="Passable retained wall">
+                <line_symbol color="0" line_width="140"/>
+            </symbol>
+            <symbol type="4" id="7" code="501.11" name="Paved area, heavy traffic">
+                <area_symbol inner_color="3" min_area="0" patterns="0"/>
+            </symbol>
+            <symbol type="2" id="8" code="505.1" name="Unpaved footpath or track, footprint: 1.4 m">
+                <line_symbol color="0" line_width="250"/>
+            </symbol>
+            <symbol type="2" id="9" code="532.6" name="Stairway, footprint: 1.6 m">
+                <line_symbol color="0" line_width="400"/>
+            </symbol>
+            <symbol type="4" id="10" code="522" name="Canopy">
+                <area_symbol inner_color="3" min_area="0" patterns="0"/>
+            </symbol>
+            <symbol type="1" id="11" code="522.1" name="Pillar">
+                <point_symbol inner_radius="200" inner_color="0" outer_color="-1" elements="0"/>
+            </symbol>
+            <symbol type="4" id="12" code="714" name="Temporary construction or closed area">
+                <area_symbol inner_color="4" min_area="0" patterns="0"/>
+            </symbol>
+        </symbols>
+        <parts count="1" current="0">
+            <part name="map">
+                <objects count="13">
+                    <object type="0" symbol="0">
+                        <coords count="1">
+                            <coord x="5000" y="5000"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="1">
+                        <coords count="2">
+                            <coord x="8000" y="5000"/>
+                            <coord x="14000" y="7000"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="2">
+                        <coords count="5">
+                            <coord x="2000" y="10000"/>
+                            <coord x="12000" y="10000"/>
+                            <coord x="12000" y="18000"/>
+                            <coord x="2000" y="18000"/>
+                            <coord x="2000" y="10000" flags="2"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="3">
+                        <coords count="2">
+                            <coord x="14000" y="10000"/>
+                            <coord x="14000" y="18000"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="4">
+                        <coords count="2">
+                            <coord x="16000" y="10000"/>
+                            <coord x="24000" y="10000"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="5">
+                        <coords count="2">
+                            <coord x="16000" y="12000"/>
+                            <coord x="24000" y="12000"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="6">
+                        <coords count="2">
+                            <coord x="16000" y="14000"/>
+                            <coord x="24000" y="14000"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="7">
+                        <coords count="5">
+                            <coord x="26000" y="10000"/>
+                            <coord x="38000" y="10000"/>
+                            <coord x="38000" y="20000"/>
+                            <coord x="26000" y="20000"/>
+                            <coord x="26000" y="10000" flags="2"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="8">
+                        <coords count="3">
+                            <coord x="2000" y="22000"/>
+                            <coord x="20000" y="22000"/>
+                            <coord x="38000" y="26000"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="9">
+                        <coords count="2">
+                            <coord x="20000" y="24000"/>
+                            <coord x="20000" y="28000"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="10">
+                        <coords count="5">
+                            <coord x="28000" y="30000"/>
+                            <coord x="36000" y="30000"/>
+                            <coord x="36000" y="36000"/>
+                            <coord x="28000" y="36000"/>
+                            <coord x="28000" y="30000" flags="2"/>
+                        </coords>
+                    </object>
+                    <object type="0" symbol="11">
+                        <coords count="1">
+                            <coord x="32000" y="33000"/>
+                        </coords>
+                    </object>
+                    <object type="1" symbol="12">
+                        <coords count="5">
+                            <coord x="2000" y="30000"/>
+                            <coord x="10000" y="30000"/>
+                            <coord x="10000" y="38000"/>
+                            <coord x="2000" y="38000"/>
+                            <coord x="2000" y="30000" flags="2"/>
+                        </coords>
+                    </object>
+                </objects>
+            </part>
+        </parts>
+    </barrier>
+</map>

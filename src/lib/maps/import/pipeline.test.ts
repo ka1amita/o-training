@@ -13,6 +13,7 @@ import { gridFromAscii, parseAsciiGrid, rasteriseContours } from './relief.ts';
 import { parseXmap } from './xmap.ts';
 
 const tiny = readFileSync(new URL('./__fixtures__/tiny.xmap', import.meta.url), 'utf8');
+const sprint = readFileSync(new URL('./__fixtures__/sprint.xmap', import.meta.url), 'utf8');
 
 const requirements: WindowRequirement[] = [
   { size: 20, needsRelief: false, minFeatures: { point: 1 } },
@@ -82,7 +83,19 @@ describe('codes / the ISOM 2017-2 canon', () => {
 
   it('reads the symbol set off the file', () => {
     expect(detectSymbolSet(parseXmap(tiny)).set).toBe('ISOM2000');
+    expect(detectSymbolSet(parseXmap(sprint)).set).toBe('ISSPROM2019');
+    expect(detectSymbolSet(parseXmap(sprint)).mapType).toBe('sprint');
     expect(detectSymbolSet(parseXmap(tiny)).mapType).toBe('forest');
+  });
+
+  it('reads it off the symbol names when the file does not name it', () => {
+    // Mapper writes its set's id into every file it draws; an OCAD export or a
+    // hand-written map need not, and the names are then the evidence there is.
+    const anonymous = parseXmap(sprint.replace(' id="ISSprOM 2019"', ''));
+    expect(anonymous.symbolSet).toBe('');
+    const detected = detectSymbolSet(anonymous);
+    expect(detected.set).toBe('ISSPROM2019');
+    expect(detected.reason).toMatch(/symbol names/);
   });
 
   it('refuses to guess when the names say nothing', () => {
@@ -97,6 +110,28 @@ describe('codes / the ISOM 2017-2 canon', () => {
     const detected = detectSymbolSet(parseXmap(tiny), 'ISSPROM2019');
     expect(detected.set).toBe('ISSPROM2019');
     expect(detected.mapType).toBe('sprint');
+  });
+
+  it('resolves a sprint map through the alias layer', () => {
+    const parsed = parseXmap(sprint);
+    const resolved = resolveSemantics(parsed, detectSymbolSet(parsed).set);
+    expect(resolved.unresolved).toEqual([]);
+    expect(resolved.resolved).toBe(resolved.features.length);
+    expect([...resolved.codes].sort()).toEqual(
+      ['112', '202', '411', '410.4', '515', '513', '513.2', '501', '505', '532', '522', '521', '520'].sort(),
+    );
+    // The canopy is an area and the pillar under it a point, both black: the geometry
+    // comes from the object and the meaning from the table.
+    const canopy = resolved.features.find((f) => f.code === '522')!;
+    expect(canopy.geometry.kind).toBe('polygon');
+    expect(semanticsOf('522')!.runnability).toBe(0.9);
+  });
+
+  it('a sprint import records what it read', () => {
+    const report = importXmap(sprint, { name: 'sprint', requirements });
+    expect(report.bundle.meta.symbolSet).toBe('ISSPROM2019');
+    expect(report.bundle.meta.mapType).toBe('sprint');
+    expect(report.unresolved).toEqual([]);
   });
 
   it('keeps an unknown code, with the colour its own map drew it in', () => {
