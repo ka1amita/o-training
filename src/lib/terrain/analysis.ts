@@ -1,5 +1,6 @@
-import { sampleGridAt, type Grid } from './height.ts';
+import { downhillAt, sampleGridAt, type Grid } from './height.ts';
 import { boundsOf, type Feature, type MapAnalysis, type OMap, type Vec } from './omap.ts';
+import type { LandformKind } from './relief.ts';
 import { semanticsOf } from './semantics.ts';
 
 /**
@@ -98,14 +99,23 @@ function landformCandidates(map: OMap, size: number): MapAnalysis['landforms'] {
 }
 
 /** The box the surveyor actually drew in, which a padded map is larger than. */
-interface Box {
+export interface Box {
   readonly minX: number;
   readonly minY: number;
   readonly maxX: number;
   readonly maxY: number;
 }
 
-function drawnExtent(map: OMap): Box {
+/**
+ * The ground the surveyor drew, as a box.
+ *
+ * Exported because two stages need the same answer: the landform candidates are clipped
+ * to it, and so are the windows (`scoreWindows` in `maps/import/analyse.ts`). A map is
+ * stored square and padded to its longer side, and a window framed on that padding is a
+ * card with a blank strip down one edge — which the padding rule in stage five refuses,
+ * from this box and not from a second idea of where the map is.
+ */
+export function drawnExtent(map: OMap): Box {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -188,10 +198,326 @@ function landformsOf(grid: Grid, size: number, drawn: Box): MapAnalysis['landfor
     // A bump under a metre is inside the noise of a reconstructed surface, and warping it
     // would produce a distractor nobody can see.
     if (Math.abs(amplitude) < 1) continue;
-    kept.push({ centre: candidate.centre, radius, amplitude });
+    const form = classifyLandform(grid, candidate.centre, radius, amplitude);
+    kept.push({
+      centre: candidate.centre,
+      radius,
+      amplitude,
+      // A name only where the ground was decisive, and only for a form the answer space
+      // has a word for: `LandformKind` has no `saddle`, so a saddle stays an unnamed piece
+      // of ground that a warp can still pick up. See `classifyLandform`.
+      ...(nameable(form) ? { kind: form.form } : {}),
+      // The axis is a measurement and travels whether or not the name did: it is what
+      // `standsOut` measures a spur across, and an unnamed candidate that later gets a
+      // word should not have to be re-measured.
+      ...(form.elongation === undefined || form.rotation === undefined
+        ? {}
+        : { rotation: form.rotation, elongation: form.elongation }),
+    });
   }
   return kept;
 }
+
+const nameable = (form: Classification): form is Classification & { form: LandformKind } =>
+  form.form !== undefined && form.form !== 'saddle' && form.confidence >= KIND_CONFIDENCE;
+
+
+// ---------------------------------------------------------------------------------------
+// Which form a candidate is
+// ---------------------------------------------------------------------------------------
+
+/**
+ * What a surveyed candidate turns out to be, including the one word the answer space lacks.
+ *
+ * `LandformKind` is the vocabulary the generator was built from and the vocabulary map
+ * dohledavka can name. A saddle is a perfectly good control description word and is
+ * neither, so it is classified here and dropped on the way out (`nameable`): adding it to
+ * `LandformKind` means adding it to that drill's `CONTROL_NAMES` in the same change, and
+ * one candidate in six on generated ground comes back a saddle, so the word is worth
+ * having the day the answer space can carry it.
+ */
+export type SurveyedForm = LandformKind | 'saddle';
+
+export interface Classification {
+  /** Absent when nothing the ground says was decisive. */
+  readonly form?: SurveyedForm;
+  /**
+   * The share of the sixteen rays that agreed, 0 to 1.
+   *
+   * One number over tests of different shapes, deliberately: it is always **how many of
+   * the rays walked out from the candidate said what the form says they should**, so one
+   * threshold applies to all of them and a form cannot pass on one kind of evidence while
+   * being weak on another. A ray that decided nothing — the ground neither fell nor rose
+   * an interval within reach — is a ray that did not agree.
+   */
+  readonly confidence: number;
+  /** Radians, along the long axis, as `Landform.rotation` means it. */
+  readonly rotation?: number;
+  /** 1 is round. Absent when the region was too small to fit an axis to. */
+  readonly elongation?: number;
+}
+
+/** Rays walked out from the candidate. Sixteen sees the two highs and two lows of a col. */
+const PROFILE_DIRECTIONS = 16;
+
+/**
+ * How far a ray walks, against the candidate's own radius, and in how many steps.
+ *
+ * Three radii, because a ray that has decided nothing is a ray that votes against the
+ * form, and on real ground two radii left three rays in ten undecided. It costs nothing on
+ * shaped ground: the walk stops at the first crossing, so it only runs its full length
+ * where the ground is flat.
+ */
+const PROFILE_REACH = 3;
+const PROFILE_STEPS = 12;
+
+/**
+ * The height difference that decides a ray, in metres: ISOM's contour interval, which is
+ * what this app draws at (`MapView`, and `standsOut` in map dohledavka asks for the same).
+ *
+ * It is the whole bar. A form the map does not draw a contour for is not a form a control
+ * description can name, and a ray that has neither fallen nor climbed a full interval
+ * within reach has not seen the edge of anything. Measured: gating on the candidate's own
+ * amplitude as well changes 2 candidates in 3500 on generated ground, because this test
+ * already refuses everything an amplitude bar would have. At half an interval it names
+ * half as much again and hill precision against the drawn contours falls from 0.95 to
+ * 0.90 — a generated map's metre of micro-relief is exactly what the half-interval bar
+ * lets through.
+ */
+const CONTOUR_INTERVAL = 5;
+
+/**
+ * How much of the evidence has to agree before the candidate gets a name.
+ *
+ * Fourteen rays of sixteen. Measured on generated maps against the contours the map
+ * actually draws (`analysis.test.ts` runs the table): at 13 of 16 hill precision falls
+ * from 0.95 to 0.94 and depression from 0.97 to 0.96; at 15 of 16 the spurs collapse from
+ * 21 to 14 and their precision from 0.57 to 0.43, because the two rays of slack are where
+ * a spur runs out into ground that has not made up its mind. Two rays is also what one
+ * bench cut across a hillside costs.
+ */
+const KIND_CONFIDENCE = 0.875;
+
+/**
+ * How nearly the long axis has to lie along the fall, as |cos| of the angle between them.
+ *
+ * 0.71 is 45 degrees: past it the axis is more along the fall than across it, which is
+ * the difference between a spur and a shoulder of the hill. An elongated form across the
+ * fall is a ridge or a terrace, and the answer space has no word for either.
+ */
+const ALONG_FALL = 0.71;
+
+/** How far out the region is looked at, against the candidate's own radius. */
+const REGION_REACH = 1.5;
+
+/** Samples across that reach. 24 gives ~450 inside the disc — a moment fit, not a map. */
+const REGION_SAMPLES = 24;
+
+/**
+ * Where the region's edge is put, as a share of the amplitude.
+ *
+ * Half the height of the bump, which is what an eye reads as "the spur" rather than "the
+ * spur and the hillside it dies into". Lower and the region grows until it is the window;
+ * higher and it shrinks to the few samples nearest the top, where every form is round.
+ */
+const REGION_SHARE = 0.5;
+
+/**
+ * Which form a piece of ground is, read off the relief around it.
+ *
+ * The sign of the amplitude says up or down and nothing else: a hollow on a hillside and a
+ * closed depression have the same sign and only one of them is a depression. What decides
+ * is **sixteen rays walked outward**, each ending where the ground first falls or first
+ * climbs a contour interval — which is the same question the contours answer, because a
+ * line closes on the side the ground drops below it:
+ *
+ * - **hill / depression** — every ray falls (or every ray climbs). A closed high, a knoll:
+ *   nothing around it within two radii stands an interval above it.
+ * - **spur / re-entrant** — one contiguous arc of rays climbs and the rest fall. That arc
+ *   is where the form runs back into the hillside it came off, which is exactly what stops
+ *   a contour closing round it. Falling rays in the majority is ground standing above its
+ *   flanks — a spur; climbing rays in the majority is ground cut into them — a re-entrant.
+ *   Confirmed against the fall: the long axis of the region has to lie along the local
+ *   fall (`ALONG_FALL`), or the form is a terrace across the slope and gets no name.
+ * - **saddle** — two climbing arcs and two falling ones. Classified and then dropped; see
+ *   `SurveyedForm`.
+ *
+ * **Where this departs from the plan.** The plan gated a spur on the region's `elongation`
+ * being 1.6 or more. A curvature candidate sits at the *nose*, and the region around a
+ * nose is not elongated: measured over a hundred generated maps, the region at a candidate
+ * on a spur comes out at a median 2.1 against 1.5 on a hill, and adding the gate took spur
+ * from 22 candidates to 10 without improving what they were. So the axis is used for the
+ * direction it points in — where it is accurate, a median 8 degrees off the generator's
+ * own — and not as a threshold.
+ */
+export function classifyLandform(
+  grid: Grid,
+  centre: Vec,
+  radius: number,
+  amplitude: number,
+): Classification {
+  const rays = profileOf(grid, centre, radius);
+  const region = regionOf(grid, centre, radius, amplitude);
+  const axes = region && { rotation: region.rotation, elongation: region.elongation };
+
+  let falling = 0;
+  let climbing = 0;
+  for (const ray of rays) {
+    if (ray === 'falls') falling++;
+    if (ray === 'climbs') climbing++;
+  }
+  const decided = (falling + climbing) / PROFILE_DIRECTIONS;
+
+  // Closed, in one direction or the other: a knoll or a pit.
+  if (climbing === 0) {
+    const confidence = falling / PROFILE_DIRECTIONS;
+    return { ...(confidence >= KIND_CONFIDENCE ? { form: 'hill' as const } : {}), confidence, ...axes };
+  }
+  if (falling === 0) {
+    const confidence = climbing / PROFILE_DIRECTIONS;
+    return { ...(confidence >= KIND_CONFIDENCE ? { form: 'depression' as const } : {}), confidence, ...axes };
+  }
+
+  const arcs = arcsOf(rays);
+  // Two ways up and two ways down: the col itself, the one form whose centre is neither a
+  // high nor a low.
+  if (arcs === 4) return { form: 'saddle', confidence: decided, ...axes };
+
+  if (arcs === 2 && climbing >= 2 && falling >= 2 && decided >= KIND_CONFIDENCE && region) {
+    const alignment = Math.abs(
+      Math.cos(region.rotation) * region.fall.x + Math.sin(region.rotation) * region.fall.y,
+    );
+    if (alignment >= ALONG_FALL) {
+      return { form: falling > climbing ? 'spur' : 'reentrant', confidence: decided, ...axes };
+    }
+  }
+  return { confidence: 0, ...axes };
+}
+
+/**
+ * Sixteen rays, each ending where the ground first leaves the band round the candidate.
+ *
+ * **Whichever comes first**, and the band is symmetric. A knoll on the shoulder of a hill
+ * rises three metres toward the summit and then plunges twenty: read as "this side climbs"
+ * it would be a spur, and the map draws a closed ring round it. The first full interval is
+ * what the cartography agrees with — measured, it is the difference between naming 0.95 of
+ * the hills right and 0.92 of them.
+ */
+function profileOf(grid: Grid, centre: Vec, radius: number): ('falls' | 'climbs' | 'flat')[] {
+  const out: ('falls' | 'climbs' | 'flat')[] = [];
+  const here = sampleGridAt(grid, centre.x, centre.y);
+  for (let d = 0; d < PROFILE_DIRECTIONS; d++) {
+    const angle = (d * 2 * Math.PI) / PROFILE_DIRECTIONS;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    let state: 'falls' | 'climbs' | 'flat' = 'flat';
+    for (let step = 1; step <= PROFILE_STEPS; step++) {
+      const t = (radius * PROFILE_REACH * step) / PROFILE_STEPS;
+      const difference = sampleGridAt(grid, centre.x + dx * t, centre.y + dy * t) - here;
+      if (difference <= -CONTOUR_INTERVAL) {
+        state = 'falls';
+        break;
+      }
+      if (difference >= CONTOUR_INTERVAL) {
+        state = 'climbs';
+        break;
+      }
+    }
+    out.push(state);
+  }
+  return out;
+}
+
+/** How many arcs of climbing ground the ring of rays is cut into, counted as boundaries. */
+function arcsOf(rays: readonly ('falls' | 'climbs' | 'flat')[]): number {
+  let changes = 0;
+  for (let i = 0; i < rays.length; i++) {
+    const here = rays[i] === 'climbs';
+    const next = rays[(i + 1) % rays.length] === 'climbs';
+    if (here !== next) changes++;
+  }
+  return changes;
+}
+
+/**
+ * The region the candidate stands out over, as a principal-axis fit.
+ *
+ * Second moments of the excess over the surrounding level: the weights are how far each
+ * sample stands clear, so the fit describes the shape of the bump rather than the shape of
+ * the disc it was sampled in. `elongation` is the ratio of the axes' standard deviations,
+ * which is 1 on a round hill whatever its size, and `rotation` is the long one — the same
+ * convention `Landform.rotation` and `contributionOf` use, so a candidate and a generated
+ * landform mean the same thing by it. Measured against the generator's own landforms, the
+ * axis comes out a median 8 degrees off.
+ *
+ * `fall` is `downhillAt` averaged over the same region, as unit vectors: on a spur they
+ * splay either side of the crest and average along it; on a round hill they cancel, which
+ * is why the alignment test is only ever asked of a form the rays already call open.
+ */
+function regionOf(
+  grid: Grid,
+  centre: Vec,
+  radius: number,
+  amplitude: number,
+): { rotation: number; elongation: number; fall: Vec } | null {
+  const sign = amplitude >= 0 ? 1 : -1;
+  const reach = radius * REGION_REACH;
+  const step = (2 * reach) / REGION_SAMPLES;
+  // The level the candidate stands out from: the mean of a ring at its own radius, which
+  // is what its amplitude was measured against in `extentOf`.
+  const level = sampleGridAt(grid, centre.x, centre.y) - amplitude;
+  const floor = Math.abs(amplitude) * REGION_SHARE;
+  const points: { x: number; y: number; weight: number }[] = [];
+  let weight = 0;
+  let sx = 0;
+  let sy = 0;
+  let fx = 0;
+  let fy = 0;
+  for (let j = 0; j <= REGION_SAMPLES; j++) {
+    for (let i = 0; i <= REGION_SAMPLES; i++) {
+      const x = centre.x - reach + i * step;
+      const y = centre.y - reach + j * step;
+      if (Math.hypot(x - centre.x, y - centre.y) > reach) continue;
+      const excess = sign * (sampleGridAt(grid, x, y) - level);
+      if (excess < floor) continue;
+      points.push({ x, y, weight: excess });
+      weight += excess;
+      sx += excess * x;
+      sy += excess * y;
+      const fall = downhillAt(grid, x, y);
+      fx += fall.x;
+      fy += fall.y;
+    }
+  }
+  // Fewer than a handful of samples is a fit to noise: three points lie on an ellipse
+  // exactly, and its axes say nothing about the ground.
+  if (points.length < 8 || weight <= 0) return null;
+
+  const cx = sx / weight;
+  const cy = sy / weight;
+  let mxx = 0;
+  let myy = 0;
+  let mxy = 0;
+  for (const p of points) {
+    mxx += p.weight * (p.x - cx) * (p.x - cx);
+    myy += p.weight * (p.y - cy) * (p.y - cy);
+    mxy += p.weight * (p.x - cx) * (p.y - cy);
+  }
+  mxx /= weight;
+  myy /= weight;
+  mxy /= weight;
+
+  const half = (mxx + myy) / 2;
+  const spread = Math.sqrt(((mxx - myy) / 2) ** 2 + mxy * mxy);
+  const length = Math.hypot(fx, fy);
+  return {
+    // Half the angle of the doubled-angle form: the direction of the larger eigenvalue.
+    rotation: 0.5 * Math.atan2(2 * mxy, mxx - myy),
+    elongation: Math.sqrt((half + spread) / Math.max(half - spread, 1e-9)),
+    fall: length === 0 ? { x: 0, y: 0 } : { x: fx / length, y: fy / length },
+  };
+}
+
 
 /**
  * How far a landform reaches, and how much of it there is.
