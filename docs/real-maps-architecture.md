@@ -1037,3 +1037,144 @@ because the old lattice was spending a third of its rows on ground the map does 
 `drawnExtent` moved from a private function in `terrain/analysis.ts` to an exported one:
 the candidates are clipped to that box and so are the windows, and a second idea of where
 the map is would be a second place for it to be wrong.
+
+## Package D — the adjusted source, and where it departs from §3 and §5
+
+Decision D2 of the plan, first half: a third source that picks a real window and then puts
+detail back on it. The second half — the discrepancy drill, where what changed *is* the
+question — is package F, and every function below was written to be the machinery it calls.
+
+### The problem, measured
+
+§1 assumed a surveyed map would be richer than a generated one. It is richer in *lines and
+areas* and much poorer in the things a drill asks about. Mapper's forest sample, 554 m
+square:
+
+| | count |
+|---|---|
+| features | 538 |
+| point features | 32 |
+| distinct point codes on the whole sheet | 6 |
+| distinct point codes in a 300 m window, median over 20 windows | 4.55 |
+
+Twelve of the 32 are one symbol (419, a special vegetation feature). A card that offers four
+kinds is a thin question at level 5 and an unanswerable one at level 10, and no amount of
+better window scoring fixes it — the ground genuinely has nothing on it. This is not a
+defect of this map: a cartographer draws what is there, and a lot of forest is forest.
+
+### `proposeEnrichment`, and what makes it safe
+
+`src/lib/terrain/enrich.ts`. `proposeEnrichment(map, crop, rng, budget) → Edit[]`, pure in
+all four arguments, and the edits are the map: `applyEdits` is the only thing that produces
+what the player sees, so a round stays a function of `(seed, level, provider.id)` and §3.4's
+"a distractor is `base + edits`" still holds with this list as the base.
+
+Every edit is checked three ways against the base map before it comes back — **visible**
+inside the window (`difference().visible`, the position test §3.4 defines), **salient**
+enough to find (`salience ≥ 0.3`, which is what excludes 405 white forest at 0.05 and a 103
+form line at 0.07), and **plausible**. Plausibility is two halves:
+
+- `suits` (§3.3) reads the *shape* of the ground: a knoll on a rise, a pit in a hollow, a
+  marsh in flat low ground, and on a picture the mask backend instead.
+- `contradicted` reads *what is drawn on it*: no boulder in a lake, none inside a building
+  or an out-of-bounds area, none in the middle of a paved yard, none on a water line or a
+  barrier. §3.3 did not need this, because the generator has no lakes and no buildings to
+  land in. The forest sample has fifty buildings and eight out-of-bounds areas, and a
+  height field cannot see either.
+
+Spacing is `separationOf` (the per-pair rule, not one constant), so an added symbol takes
+the room its own drawing needs and `MIN_POINT_SEPARATION` is a floor nothing undercuts.
+Size is `minSizeMm` of paper at the map's own scale, which makes a boulder 6 m at 1:15000
+and 4 m at the 1:10000 the sample was drawn at — the band the generator draws its own
+boulders in, arrived at from ISOM rather than copied from `terrain.ts`.
+
+The vocabulary is **derived from `SEMANTICS`** and never listed: point symbols a control
+description can name, in the four families that describe ground. Made by people is out —
+`suits` cannot judge a tower, because the ground has no opinion about who built one — and
+so are the three special-feature symbols (115, 313, 419), which mean whatever the legend
+says.
+
+A **swap** is filtered by the ground and not by the family, which is the one place the
+obvious rule is wrong: ISOM files a boulder under `rock` and the knoll beside it under
+`landform`, so "same family" would rule out the one swap worth making. A **remove** never
+takes a line — a path runs off the window and out the other side, so removing one inside a
+card leaves it stopping in mid-air on every other card of the map. A **move** reuses
+`proposeEdit` and then checks what it proposed.
+
+### Two bugs the properties found
+
+- `difference` read an `add` without the feature's own `size`, where a move and a remove
+  both read one. Faint symbols therefore scored under the salience floor and were silently
+  dropped from the vocabulary, so "add the kinds the window lacks" had quietly become "add
+  the loud ones". Nothing has ever proposed an `add` before this package, so no round and
+  no golden moved when it was fixed.
+- The acceptance test ran *after* each proposer rather than inside its attempt loop, so a
+  candidate turned down cost the whole budget slot: a level asking for six adds got 4.95.
+
+### `AdjustedProvider` and the policy
+
+`AdjustedProvider(library, intensity)` picks through `LibraryProvider` and declines exactly
+when it declines, so §5.1's fall-through to the generator is untouched. The **map's** id is
+`adjusted:<bundle>:<hash of the edits>`; the **provider's** is
+`adjusted:<intensity>:<library id>`, because §5.2 requires an id to name everything that
+changes a round and the intensity changes all of them.
+
+`WindowRequirement` gains an optional `level`, deliberately **not** in `requirementId`: a
+level does not change which ground answers the question (`minFeatures` is a floor on a real
+map, §4.3), so two levels asking for the same square of forest keep sharing one scored
+window list and every bundle already written stays valid. A requirement that states none is
+adjusted at the middle of the ladder.
+
+`OMap.adjusted` sits beside `meta` rather than inside it: `meta` is provenance and
+adjusting a map does not change where it came from. It is `sourceOf`'s only input for
+`adj`, and it is a fact about the map — a window the adjusted source handed back with no
+edits on it is a `real` round and says so.
+
+**At intensity 0 the adjusted source is the library draw for draw**, since an empty budget
+draws no numbers. That is §5.2's "a forced choice is not a draw" one class along.
+
+**A mix stays generated and real.** The share and the intensity answer different questions,
+so one slider driving both would make one id name two sets of rounds; and every device
+already storing `mixed` would change what it plays for a source it never asked for.
+Adjustment is a source of its own, built exactly as `real` is, and a player who wants it
+gently turns the intensity down.
+
+### The raster tier (§5.3, extended)
+
+An `add` on an image-only map **materialises as a drawn symbol over the picture** rather
+than being skipped. Plausibility is the mask, spacing reads `analysis.moveable` (the picture
+already draws those blobs and they still take up room), and the renderer draws the symbol
+through the same style table a vector one goes through. The pixels are untouched — §3's cut
+and paste is what a *move* on a picture is; an add leaves no patch.
+
+### Measured
+
+Twenty 300 m windows of the forest sample, per level, every budget slot spent:
+
+| level | adds | removes | swaps | moves | distinct point codes in the window |
+|---|---|---|---|---|---|
+| 1 | 2.00 | 0.00 | 0.00 | 0.00 | 4.55 → 6.55 |
+| 5 | 4.00 | 1.00 | 1.00 | 1.00 | 4.55 → 9.10 |
+| 10 | 6.00 | 3.00 | 3.00 | 3.00 | 4.55 → 11.30 |
+
+Through the provider, over 24 windows a level: point features in the window 12.96 → 14.96 /
+16.83 / 18.63, distinct point codes 4.58 → 6.58 / 9.25 / 11.88. All four terrain drills are
+well formed at levels 1, 5 and 10 over 24 seeds each.
+
+### What package F inherits
+
+- `proposeEnrichment(map, crop, rng, budget)` — the edit list, already checked for
+  visibility, salience and plausibility. It is the answer key.
+- `budgetFor(level)` and `scaledBy(budget, intensity)` — `k(level)` for the discrepancy
+  drill, and a way to turn it down.
+- `footprintOf(map, edit) → { at, radius }` — where an edit happened and how much room to
+  allow a tap, read off the edit and the base map and never off the two drawings.
+- `MIN_SALIENCE`, `ADDABLE`, `drawnSizeOf(code, scale)`.
+- `plausibilityOf` / `suitsAt`, moved out of `drills/shared/siblings.ts` into
+  `terrain/edits.ts`: enrichment asks them about a symbol that is not on the map yet, which
+  is not a fact about distractors.
+
+One rule F has to keep, and the reason the adjusted base is the *base*: the edits go on the
+map every option is cut from, and `siblings` then puts its one edit on top. Adjusting each
+option separately would make the answer differ from the distractors by the adjustment as
+well as by the distraction — a second right answer wearing a first one's clothes.

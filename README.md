@@ -38,6 +38,12 @@ given. A real map is downloaded the first time it is used and then kept on the d
 session in the forest needs no signal. The default is generated, and a device that never
 opens that screen fetches nothing.
 
+**Adjusted real maps** are the fourth setting: the same surveyed ground with plausible
+extra detail drawn onto each extract — a boulder where the ground is broken, a knoll on a
+rise, never a marsh on a hillside — because a real map is a map of ground that sometimes
+has very little on it, and a card with one thing on it is a thin question. A slider says
+how much is added, the header says `adj`, and at 0% you are back on the untouched map.
+
 Progress tracks **median response time per session** — the number a 2026 study on the
 Danish elite squad found falling 27% over six weeks of this kind of work, steeply through
 about session seven and then flattening.
@@ -80,10 +86,11 @@ to it; if you ever switch to HTTPS: `gh auth refresh -s workflow`.
 ## Privacy
 
 Stored on your device: a level per drill and a list of finished sessions
-(`{timestamp, responseMs, correct}`), your map setting from Settings, and any map bundles
-you have used, cached so they work offline. Nothing else — no name, no identifier, no
-telemetry. Erase the levels, the sessions and the map setting from the Progress screen; the
-cached maps stay, since re-downloading them is not what "erase my progress" asks for.
+(`{timestamp, responseMs, correct}`), your map setting from Settings — which source, the
+mix proportion, how much adjustment, and which maps are ticked, by filename — and any map
+bundles you have used, cached so they work offline. Nothing else — no name, no identifier,
+no telemetry. Erase the levels, the sessions and the map setting from the Progress screen;
+the cached maps stay, since re-downloading them is not what "erase my progress" asks for.
 
 Playing over a link sends taps, a seed, and the **name** of your map setting — a hash of
 which maps you hold, so both phones can check they agree. No map and no part of one ever

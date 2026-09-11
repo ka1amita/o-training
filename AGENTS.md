@@ -606,3 +606,78 @@ offset is pinned to its far side, and more than a twentieth of a window outside
 `drawnExtent(map)` scores zero like anything else a window cannot answer. Asked only of a
 drawing the card fits inside: a map drawn smaller than the window that wants it has no
 framing that avoids the paper, and refusing every window would be refusing the map.
+
+## Adjusted maps
+
+The third source — `src/lib/terrain/enrich.ts`, `AdjustedProvider`, and the fourth radio on
+the settings screen. Decision D2 of the plan, first half; the discrepancy drill is the
+second and reuses every function here.
+
+- **A surveyed map is not a generated one with better cartography.** It is a map of ground
+  that happens to have nothing on it in places. Mapper's forest sample carries 538 features
+  and **32 point features** in 554 m of forest, twelve of them one vegetation symbol, so a
+  300 m window offers a median of 4.6 distinct point codes where a level asks for more.
+  That thinness is what this exists to fix, and it is a fact about real maps rather than
+  about this one: a cartographer draws what is there.
+- **Enrichment is deterministic and it is plausible, and the second is the harder half.**
+  `suits` reads the *shape* of the ground and `contradicted` reads *what is drawn on it*,
+  which is the half a height field cannot see and the half that only starts to matter on a
+  real map: the generator has no lakes and no buildings to land in, and the forest sample
+  has fifty buildings. An implausible symbol is a **tell** — a player learns to find the
+  odd thing by spotting the marsh on the hillside rather than by reading the ground, which
+  is a different skill and not the one being trained.
+- **The vocabulary is derived from `SEMANTICS`, never listed.** Every point symbol a
+  control description can name, in the four families that describe ground. Two exclusions:
+  nothing **made by people**, because a tower is there because somebody built it and the
+  ground has no opinion about that, so `suits` cannot judge one; and none of the three
+  **special-feature** symbols (115, 313, 419), which mean whatever the map's legend says —
+  placing one writes a legend entry the map does not have.
+- **A swap is filtered by the ground, not by the family.** ISOM files a boulder under rock
+  and the knoll standing beside it under landform, and that pair is the one every beginner
+  confuses; a rule that kept a swap inside its family would rule out the swap worth making.
+  `suits` at the feature's own position is the whole filter, which is what makes "boulder to
+  knoll" happen on a rise and nowhere else.
+- **A remove never takes a line.** A path runs off the window and out the other side, so
+  removing one inside a card leaves it stopping in mid-air on every *other* card cut from
+  the same map. An area has to lie wholly inside the window for the same reason.
+- **A move whose destination needs clamping is refused, not clamped.** `applyEdits` clamps
+  to the sheet, so a clamped move puts the feature somewhere other than where plausibility
+  was asked about — and at the corner it put the answer a hundredth of a nanometre outside
+  the window its own check had just passed it through.
+- **The acceptance test runs inside each proposer's attempt loop.** Outside it, a candidate
+  turned down cost the whole budget slot, and what it quietly deleted from the vocabulary
+  were the *faint* symbols: "add the kinds the window lacks" had come to mean "add the loud
+  ones", with nothing saying so. A level asking for six adds got four and a half.
+- **`difference` reads an `add` through the feature's own `size`**, as it always did for a
+  move or a remove. It did not, and that was the bug above's other half. Nothing proposed
+  an `add` before package D, so no round and no golden moved when it was fixed.
+- **The id names the edits.** The *map* is `adjusted:<bundle>:<hash of the edits>`, so two
+  windows of one bundle adjusted differently are two maps. The *provider* is
+  `adjusted:<intensity>:<library id>`, because both halves change every round it makes —
+  two devices on the same maps at different intensities are two different games and fall
+  back to generated, exactly as two devices on different maps do.
+- **`OMap.adjusted` sits beside `meta`, not inside it.** `meta` is provenance, and
+  adjusting a map does not change where it came from. It is the badge's only input and it
+  is a fact about the map: a window the adjusted source handed back with **no** edits is a
+  `real` round and says so.
+- **At intensity 0 the adjusted source is the library, draw for draw.** An empty budget
+  proposes nothing and consumes no numbers — the same rule `MixedProvider` keeps at 100%
+  one source, and for the same reason: a knob turned all the way down must not still shift
+  every round after it.
+- **A mix is generated and real, and adjustment is not in it.** The share says how often a
+  round is on a real map and the intensity says how much was put back on the window when it
+  is; one slider driving both would make one id name two sets of rounds, and every device
+  already storing `mixed` would change what it plays for a source nobody asked it for.
+  Adjustment is a source of its own, built exactly as `real` is.
+- **Never on the answer variant of a distractor round.** The edits *are* the base — the map
+  every option is cut from — and `siblings` then puts its one edit on top. Adjusting per
+  option would make the answer differ from the distractors by the adjustment as well as by
+  the distraction, which is a second right answer wearing a first one's clothes.
+- **A picture is adjusted too, and an `add` is drawn over it.** Plausibility comes from the
+  colour mask, spacing reads `analysis.moveable` because a boulder the picture already
+  draws still takes up room, and the symbol reaches the page through the style table a
+  vector one goes through. The pixels are untouched: a *move* on a picture is a cut and
+  paste and leaves a patch, an add leaves none.
+- Measured on the forest sample, 300 m windows, twenty a level: every budget slot spent at
+  every level, and distinct point codes in the window **4.55 → 6.55 / 9.10 / 11.30** at
+  levels 1 / 5 / 10.
