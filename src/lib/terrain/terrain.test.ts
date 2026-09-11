@@ -222,7 +222,12 @@ describe('terrain / generate', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     const terrains = [1, 2, 3].flatMap((s) => [1, 5, 9].map((l) => make(s, l)));
-    expect(hashJson(terrains.map(goldenMap))).toMatchInlineSnapshot(`"b6b1aff3"`);
+    // Re-pinned once, on purpose: the codes are ISOM 2017-2 now, so every feature in the
+    // hash carries a different **string** — boulder 206 → 204, knoll 112 → 109, and so
+    // on. Nothing the generator decided moved with them, and that is measurable: hash the
+    // same projection with every `code` field removed and it is `049b8e41` before this
+    // commit and `049b8e41` after.
+    expect(hashJson(terrains.map(goldenMap))).toMatchInlineSnapshot(`"a1744b3b"`);
   });
 });
 

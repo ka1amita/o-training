@@ -284,10 +284,10 @@ describe('rasterAnalysis', () => {
   it('finds the dots and refuses the path and the lake', () => {
     const analysis = rasterAnalysis(layer(), 100, 48);
     expect(analysis.moveable).toHaveLength(5);
-    expect(analysis.moveable.filter((f) => f.code === '206')).toHaveLength(4);
-    expect(analysis.moveable.filter((f) => f.code === '312')).toHaveLength(1);
+    expect(analysis.moveable.filter((f) => f.code === '204')).toHaveLength(4);
+    expect(analysis.moveable.filter((f) => f.code === '311')).toHaveLength(1);
     // A blob is at the middle of the dot it came from, in metres.
-    const pond = analysis.moveable.find((f) => f.code === '312')!;
+    const pond = analysis.moveable.find((f) => f.code === '311')!;
     expect(pond.geometry.kind === 'point' && pond.geometry.at.x).toBeCloseTo(50, 0);
     expect(pond.geometry.kind === 'point' && pond.geometry.at.y).toBeCloseTo(70, 0);
     expect(analysis.controlSites).toHaveLength(5);
@@ -332,12 +332,12 @@ describe('reading the mask at runtime', () => {
   it('is the plausibility check a map with no height field gets', () => {
     // §3.3: same question, two backends. A boulder on the open yellow is fine, a boulder
     // in the lake is not, and a marsh where the contours are crowded is not.
-    expect(suitsOnMask('206', raster, { x: 70, y: 20 })).toBe(true);
-    expect(suitsOnMask('206', raster, { x: 20, y: 20 })).toBe(false);
-    expect(suitsOnMask('311', raster, { x: 70, y: 70 })).toBe(false);
-    expect(suitsOnMask('311', raster, { x: 20, y: 20 })).toBe(true);
+    expect(suitsOnMask('204', raster, { x: 70, y: 20 })).toBe(true);
+    expect(suitsOnMask('204', raster, { x: 20, y: 20 })).toBe(false);
+    expect(suitsOnMask('310', raster, { x: 70, y: 70 })).toBe(false);
+    expect(suitsOnMask('310', raster, { x: 20, y: 20 })).toBe(true);
     // Off the picture nothing is claimed, so nothing is refused.
-    expect(suitsOnMask('311', raster, { x: 500, y: 500 })).toBe(true);
+    expect(suitsOnMask('310', raster, { x: 500, y: 500 })).toBe(true);
   });
 
   it('displaces the mask through the same bump the relief uses', () => {

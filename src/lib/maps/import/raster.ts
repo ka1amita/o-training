@@ -495,7 +495,9 @@ export function rasterAnalysis(raster: RasterLayer, size: number, cells: number)
     controlSites: blobs.map((b) => positionOfBlob(b)),
     moveable: blobs.map((blob, index): Feature => ({
       id: `blob-${index}`,
-      code: blob.klass === MASK.blue ? '312' : '206',
+      // 311 a well, 204 a boulder: the two things a round dot of that colour is on an
+      // ISOM 2017-2 map, and all a mask can honestly claim about one.
+      code: blob.klass === MASK.blue ? '311' : '204',
       geometry: { kind: 'point', at: positionOfBlob(blob) },
       size: blob.radius,
     })),

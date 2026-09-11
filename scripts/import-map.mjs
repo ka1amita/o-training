@@ -21,6 +21,8 @@
 //     --origin <x,y>       map metres of the picture's top-left corner; default 0,0
 //     --cell <metres>      metres per colour-mask cell; default 1
 //     --scale <n>          1:n the picture was drawn for; default 15000, images only
+//     --symbol-set <id>    isom2000 | isom2017 | issprom2019, when the file does not say
+//     --map-type <kind>    forest | sprint; ISSprOM implies sprint
 //     --keep-edges         do not crop the banner and the white margins
 //
 // ## The picture is written out, not linked
@@ -166,9 +168,28 @@ if (options.dem && !isImage) {
   console.error(`dem: ${asc.ncols}x${asc.nrows} at ${asc.cellsize} m, resampled to ${samples}`);
 }
 
+// The symbol set decides which alias layer the codes go through, and getting it wrong
+// gives a map full of *wrong* symbols rather than unknown ones — so the spelling is
+// checked here rather than passed on to be silently ignored.
+const SYMBOL_SETS = { isom2000: 'ISOM2000', isom2017: 'ISOM2017', issprom2019: 'ISSPROM2019' };
+let symbolSet;
+if (options['symbol-set']) {
+  symbolSet = SYMBOL_SETS[String(options['symbol-set']).toLowerCase().replace(/[^a-z0-9]/g, '')];
+  if (!symbolSet) {
+    console.error(`--symbol-set: ${options['symbol-set']} is not one of ${Object.keys(SYMBOL_SETS).join(', ')}`);
+    process.exit(2);
+  }
+}
+if (options['map-type'] && !['forest', 'sprint'].includes(options['map-type'])) {
+  console.error(`--map-type: ${options['map-type']} is not forest or sprint`);
+  process.exit(2);
+}
+
 const shared = {
   name,
   requirements: libraryRequirements(),
+  ...(symbolSet ? { symbolSet } : {}),
+  ...(options['map-type'] ? { mapType: options['map-type'] } : {}),
   ...(options.licence ? { licence: options.licence } : {}),
   ...(options.attribution ? { attribution: options.attribution } : {}),
   ...(options.interval ? { interval: Number(options.interval) } : {}),

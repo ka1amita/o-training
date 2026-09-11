@@ -17,7 +17,7 @@ import type { IsomCode } from '@/lib/terrain/semantics.ts';
  * could really sit in.
  *
  * The vocabulary is keyed by **ISOM code**, like every other thing in the app that has to
- * hold for an imported feature as well as a generated one: an imported 206 and a generated
+ * hold for an imported feature as well as a generated one: an imported 204 and a generated
  * boulder are one answer, or the round could share a kind with itself and not know.
  *
  * Left out on purpose:
@@ -45,17 +45,17 @@ export type ControlKind =
  * because the player has no word for it either.
  */
 const ANSWERS: Readonly<Record<IsomCode, ControlKind>> = {
-  '206': 'boulder',
-  '112': 'knoll',
-  '116': 'pit',
-  '418': 'tree',
-  '203': 'crag',
+  '204': 'boulder',
+  '109': 'knoll',
+  '112': 'pit',
+  '417': 'tree',
+  '202': 'crag',
   '505': 'path',
-  '306': 'stream',
+  '305': 'stream',
   '516': 'fence',
-  '311': 'marsh',
+  '310': 'marsh',
   '401': 'open',
-  '212': 'rock',
+  '214': 'rock',
 };
 
 /**
@@ -258,7 +258,7 @@ function bendsOf(points: readonly Vec[]): Vec[] {
 /**
  * How far the drawn symbol spreads from the point the feature is at, in metres.
  *
- * `MapView` draws these at fixed millimetres of paper through the style table, and 203 as
+ * `MapView` draws these at fixed millimetres of paper through the style table, and 202 as
  * a line across the slope that is wider than the feature's own size — so a crag whose
  * *centre* is outside a ring can still have half of itself inside one. The ring test is
  * about what a player sees, so it measures what is drawn, and it asks the same table the
@@ -267,7 +267,7 @@ function bendsOf(points: readonly Vec[]): Vec[] {
 function drawnReach(point: Feature, unit: number): number {
   const style = styleFor(point.code);
   const symbol =
-    point.code === '203'
+    point.code === '202'
       ? POINT.cliffWidth * 3
       : style?.geometry === 'point' ? style.radius : POINT.boulderRadius;
   return Math.max(point.size ?? 0, symbol * unit);

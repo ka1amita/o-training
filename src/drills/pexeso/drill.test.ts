@@ -143,10 +143,13 @@ describe('pexeso / generate', () => {
 
   it('golden: fixed seeds at fixed levels', () => {
     expect(hashJson([1, 2].flatMap((s) => [1, 6, 10].map((l) => golden(gen(s, l))))))
-      // Re-pinned once, on purpose: `controlFor` drew from its candidate list twice and
-      // now draws once, which is one rng draw fewer per pair and moves every card after
-      // it. Nothing else about generation changed.
-      .toMatchInlineSnapshot(`"3569fca9"`);
+      // Re-pinned twice, both on purpose. First: `controlFor` drew from its candidate
+      // list twice and now draws once, which is one rng draw fewer per pair and moved
+      // every card after it. Then: the codes became ISOM 2017-2, so every feature in the
+      // hash carries a different string. Stripped of every `code` this hash is `b756b321`
+      // on both sides of that second re-pin — the cards, the pairs and the ground are the
+      // ones it drew before.
+      .toMatchInlineSnapshot(`"9d86aef6"`);
   });
 });
 

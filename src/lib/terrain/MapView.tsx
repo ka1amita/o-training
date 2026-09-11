@@ -359,7 +359,7 @@ function ContourPath({ contour, unit }: { contour: Contour; unit: number }) {
  * — a real map arrives with about a hundred of them — draws after those, in the order the
  * map itself gives it.
  */
-const AREA_ORDER: readonly IsomCode[] = ['401', '403', '406', '408', '410', '212', '311'];
+const AREA_ORDER: readonly IsomCode[] = ['401', '403', '406', '408', '410', '214', '310'];
 
 function Areas({ areas, marshId }: { areas: readonly Feature[]; marshId: string }) {
   const groups = new Map<string, Feature[]>();
@@ -479,7 +479,7 @@ function Point({ point, unit }: { point: Feature; unit: number }) {
     case 'disc':
       return <circle cx={at.x} cy={at.y} r={style.radius * unit} fill={style.colour} />;
     case 'triangle': {
-      // 116: a brown triangle, apex down.
+      // 112: a brown triangle, apex down.
       const r = style.radius * unit;
       return (
         <path
@@ -500,7 +500,7 @@ function Point({ point, unit }: { point: Feature; unit: number }) {
   }
 }
 
-/** 203: the tags on the low side are what make it a cliff rather than a stray line. */
+/** 202: the tags on the low side are what make it a cliff rather than a stray line. */
 function Cliff({
   at, size, style, unit,
 }: { at: Vec; size: number; style: PointStyle; unit: number }) {

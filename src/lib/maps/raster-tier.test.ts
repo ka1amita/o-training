@@ -9,7 +9,9 @@ import { mapMemory } from '@/drills/mapMemory/drill.ts';
 import { pexeso } from '@/drills/pexeso/drill.ts';
 import { hashJson, seeded } from '@/lib/rng.ts';
 import { applyEdits, difference } from '@/lib/terrain/edits.ts';
+import { styleFor } from '@/lib/terrain/isom.ts';
 import MapView from '@/lib/terrain/MapView.tsx';
+import type { Feature } from '@/lib/terrain/omap.ts';
 import { generateTerrain, paramsFor } from '@/lib/terrain/terrain.ts';
 import { loadBundle, type MapBundle } from './bundle.ts';
 import { FIXTURE_METRES_PER_PIXEL, syntheticMap } from './import/__fixtures__/paint.ts';
@@ -60,7 +62,7 @@ describe('a bundle made of pixels', () => {
     expect(picture.analysis!.controlSites!.length).toBeGreaterThanOrEqual(30);
     expect(picture.analysis!.moveable!.length).toBe(picture.analysis!.controlSites!.length);
     const codes = new Set(picture.analysis!.moveable!.map((f) => f.code));
-    expect([...codes].sort()).toEqual(['206', '312']);
+    expect([...codes].sort()).toEqual(['204', '311']);
     // They are not features: the picture already draws them, and drawing them again as
     // symbols would put a second boulder beside every boulder.
     expect(picture.features).toHaveLength(0);
@@ -145,7 +147,7 @@ describe('the drills, on a map made of pixels', () => {
     expect(after.raster!.patches![0]!.radius).toBeGreaterThan(0);
     // ...and paste: the blob is now a feature, so the style table draws its symbol.
     expect(after.features).toHaveLength(1);
-    expect(after.features[0]!.code).toMatch(/^(206|312)$/);
+    expect(after.features[0]!.code).toMatch(/^(204|311)$/);
     // The base is untouched, which is what makes a variant a variant.
     expect(distractor.base.raster!.patches).toBeUndefined();
     expect(distractor.base.features).toHaveLength(0);
@@ -245,8 +247,34 @@ describe('a map with no picture draws exactly what it drew before', () => {
       ) as MapBundle,
     );
     const svg = render({ map: forest });
+    // Re-pinned with the move to ISOM 2017-2, which re-imported this bundle: the same
+    // ground, drawn from codes that are two tables further along.
     expect({ hash: hashJson(svg), length: svg.length })
-      .toEqual({ hash: '77a61b90', length: 147597 });
+      .toEqual({ hash: '9fda80bd', length: 147430 });
+  });
+
+  it('draws every symbol the bundle carries, rather than dropping one silently', () => {
+    // `MapView` renders a feature only when the style it gets back has the geometry the
+    // feature has — `Line` returns null for a point style — so a row whose geometry
+    // disagrees with the map's is not a plain symbol, it is an invisible one. 202 is
+    // where that bites: a cliff is a line on a surveyed map and a point where the
+    // generator stands one, and both carry the code.
+    const forest = loadBundle(
+      JSON.parse(
+        readFileSync(new URL('../../../public/maps/forest-sample.json', import.meta.url), 'utf8'),
+      ) as MapBundle,
+    );
+    const geometryOf = (f: Feature) =>
+      f.geometry.kind === 'point' ? 'point' : f.geometry.kind === 'polyline' ? 'line' : 'area';
+    const undrawn = forest.features.filter((f) => {
+      const style = styleFor(f.code, {
+        geometry: geometryOf(f),
+        ...(f.colour ? { colour: f.colour } : {}),
+      });
+      return style?.geometry !== geometryOf(f);
+    });
+    expect(undrawn.map((f) => `${f.code} ${geometryOf(f)}`)).toEqual([]);
+    expect(forest.features.length).toBe(538);
   });
 });
 

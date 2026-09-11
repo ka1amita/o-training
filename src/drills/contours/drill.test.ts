@@ -241,7 +241,11 @@ describe('map memory / generate', () => {
   });
 
   it('golden: fixed seeds at fixed levels', () => {
+    // Re-pinned once, with the renumbering to ISOM 2017-2: the maps these options are
+    // made of carry the new code strings, and a `swap` distractor now names one too.
+    // Stripped of every `code` the hash is `dde89444` on both sides of that commit, so
+    // which feature each distractor edits, and how far, is unchanged.
     expect(hashJson([1, 2].flatMap((s) => [1, 5, 10].map((l) => goldenMemory(memGen(s, l))))))
-      .toMatchInlineSnapshot(`"9847a464"`);
+      .toMatchInlineSnapshot(`"0ca4bf2c"`);
   });
 });

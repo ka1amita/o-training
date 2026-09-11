@@ -48,6 +48,21 @@ export interface Semantics {
   readonly runnability?: number;
   /** A line you cannot cross: impassable cliff, high fence, uncrossable marsh border. */
   readonly barrier?: boolean;
+  /**
+   * A barrier that is **binding**, not advisory.
+   *
+   * Forest-O and sprint-O disagree about what "impassable" means, and it is a rule
+   * difference rather than a drawing one: on a forest map an impassable cliff is a
+   * statement about the ground, and a competitor who climbs it is merely foolish; under
+   * ISSprOM it is a *rule*, and crossing an impassable wall, fence, hedge or out-of-bounds
+   * area is a disqualification. So `barrier` stays the route-cost hint it always was and
+   * this is the stronger claim, read together with `MapMeta.mapType`: on a sprint map a
+   * strict barrier may not be crossed at all, on a forest map it is still only expensive.
+   *
+   * It says nothing about control sites. A control on the foot of an impassable cliff or
+   * at the corner of a building is ordinary in both disciplines.
+   */
+  readonly barrierStrict?: boolean;
   /** Can a control sit on it? */
   readonly controlSite?: boolean;
   /** Where this thing may legitimately be. */
@@ -93,79 +108,272 @@ const REACH = 10;
 /**
  * The codes the app understands, generated or imported.
  *
- * The first nineteen are the generator's, and they are the aliases the design note fixes
- * (`docs/real-maps-architecture.md` §2.1). Where `isom.ts` names a different number beside
- * a *drawing* constant — the boulder disc is 204's, the knoll disc 109's — that is the
- * picture the generator borrowed, not the semantic key.
- *
  * ## Which standard these numbers are
  *
- * **ISOM 2000**, which is what the generator's codes already were: checked one by one
- * against Mapper's own ISOM2000 symbol table, 112 is a small knoll, 116 a pit, 203 a
- * passable rock face, 206 a boulder, 212 bare rock, 306 a crossable small watercourse,
- * 311 an indistinct marsh, 401/403/406/408/410 the vegetation scale, 418 a special
- * vegetation feature. Two are the generator's own and do **not** agree with the standard:
- * **508** is a narrow ride here and a less distinct small path there, and **516** is a
- * fence here and a power line there. They stay as they are — every golden hash is over
- * generated features carrying them — and `maps/import/codes.ts` aliases the imported ones
- * out of the way instead.
+ * **ISOM 2017-2, and that is now the whole answer.** It was ISOM 2000 with two numbers
+ * borrowed from elsewhere, documented as 2017-2 in one file and as 2000 in another, and
+ * the confusion was a *version* confusion rather than a sprint-versus-forest one. The
+ * canon is the current standard; every other numbering — ISOM 2000, the 2017 first
+ * edition, ISSprOM 2019 — is aliased onto it at import by `maps/import/codes.ts`, which
+ * is the only place a source's own numbers exist.
  *
- * The rest of the table is what a forest map actually contains, added when the first real
- * one arrived. An unrecognised code still renders, in its own colour class from the map's
- * colour table, and is simply never chosen as an edit target: about 120 symbols exist and
- * a table that has to be complete before a map can be opened is a table no map is ever
- * opened with.
+ * Checked symbol by symbol against OpenOrienteering Mapper's own `ISOM 2017-2` symbol set
+ * and its cross-reference tables (`symbol sets/ISOM2000-ISOM 2017-2.crt` and
+ * `ISOM 2017-2-ISSprOM 2019.crt`), which is where the mapping in `codes.ts` comes from
+ * too: 109 is a small knoll, 112 a pit, 202 a cliff, 204 a boulder, 214 bare rock, 305 a
+ * small crossable watercourse, 310 an indistinct marsh, 417 a prominent large tree.
+ *
+ * The two that used to be the generator's private meanings are **the standard's** now,
+ * which is the tell that 2017-2 was the right canon: **508** really is a narrow ride and
+ * **516** really is a fence — under ISOM 2000 they were a less distinct small path and a
+ * power line, and that is what `codes.ts` moves an imported 2000 map's codes out of.
+ *
+ * The renumbering the generator went through, once, in the commit that made this the
+ * canon: boulder 206 → 204, knoll 112 → 109, pit 116 → 112, crag 203 → 202, tree
+ * 418 → 417, marsh 311 → 310, stream 306 → 305, bare rock 212 → 214. Contours, the
+ * vegetation scale, the footpath, the ride and the fence kept their numbers. **Nothing
+ * about the generator's decisions moved with them** — where every feature stands, what
+ * shape it has and which landform it belongs to hash the same with the code strings
+ * taken out.
+ *
+ * ## Geometry is the standard's, not the generator's
+ *
+ * `geometry` is what the *symbol* is in ISOM: 202 is a line, because on a surveyed map a
+ * cliff is drawn along the break it marks. The generator draws its crag as a point with a
+ * size, and that is allowed — a `Feature` carries its own geometry and `styleFor` asks
+ * for the picture of the geometry it has. The table's geometry is for grouping symbols,
+ * not for deciding what is on the map.
+ *
+ * The rest of the table is what a forest or sprint map actually contains. An unrecognised
+ * code still renders, in its own colour class from the map's colour table, and is simply
+ * never chosen as an edit target: about 190 symbols exist in Mapper's set and a table
+ * that has to be complete before a map can be opened is a table no map is ever opened
+ * with.
  */
 export const SEMANTICS: Readonly<Record<IsomCode, Semantics>> = {
-  // Relief.
+  // -------------------------------------------------------------------------------------
+  // Landforms. Brown.
+  // -------------------------------------------------------------------------------------
   '101': { code: '101', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, minSizeMm: 0.14 },
+  /** The tick on the low side of a closed contour. The standard folds it into 101; Mapper
+   *  numbers it 101.1, and `maps/import/relief.ts` reads it by that number. */
+  '101.1': { code: '101.1', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, minSizeMm: 0.14 },
   '102': { code: '102', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, minSizeMm: 0.25 },
   '103': { code: '103', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, minSizeMm: 0.1 },
-  '112': {
-    code: '112', geometry: 'point', colour: 'brown', family: 'landform',
+  /** 104 earth bank, 105 earth wall, 106 ruined earth wall — 2017-2 shifted these two down
+   *  from ISOM 2000's 106/107/108, because the slope line and the contour value stopped
+   *  being numbers of their own. */
+  '104': {
+    code: '104', geometry: 'line', colour: 'brown', family: 'landform',
+    reliefBound: true, controlSite: true, minSizeMm: 0.18,
+  },
+  '105': {
+    code: '105', geometry: 'line', colour: 'brown', family: 'landform',
+    reliefBound: true, controlSite: true, minSizeMm: 0.18,
+  },
+  '106': {
+    code: '106', geometry: 'line', colour: 'brown', family: 'landform',
+    reliefBound: true, controlSite: true, minSizeMm: 0.18,
+  },
+  '107': {
+    code: '107', geometry: 'line', colour: 'brown', family: 'landform',
+    reliefBound: true, controlSite: true, minSizeMm: 0.25,
+  },
+  '108': {
+    code: '108', geometry: 'line', colour: 'brown', family: 'landform',
+    reliefBound: true, controlSite: true, minSizeMm: 0.14,
+  },
+  /** 109 small knoll — the generator's `knoll`. */
+  '109': {
+    code: '109', geometry: 'point', colour: 'brown', family: 'landform',
     controlSite: true, reliefBound: true, minSizeMm: 0.5,
     ground: { at: 'maximum' },
   },
-  '116': {
-    code: '116', geometry: 'point', colour: 'brown', family: 'landform',
+  '110': {
+    code: '110', geometry: 'point', colour: 'brown', family: 'landform',
+    controlSite: true, reliefBound: true, minSizeMm: 0.6,
+    ground: { at: 'maximum' },
+  },
+  '111': {
+    code: '111', geometry: 'point', colour: 'brown', family: 'landform',
+    controlSite: true, reliefBound: true, minSizeMm: 0.8,
+    ground: { at: 'minimum' },
+  },
+  /** 112 pit — the generator's `pit`. */
+  '112': {
+    code: '112', geometry: 'point', colour: 'brown', family: 'landform',
     controlSite: true, reliefBound: true, minSizeMm: 0.9,
     ground: { at: 'minimum' },
   },
+  '113': {
+    code: '113', geometry: 'area', colour: 'brown', family: 'landform',
+    runnability: 0.8, controlSite: true, minSizeMm: 1,
+  },
+  /** The single dot the broken-ground pattern is made of, which a surveyor also places
+   *  alone. A point, so it is not the area above. */
+  '113.1': { code: '113.1', geometry: 'point', colour: 'brown', family: 'landform', minSizeMm: 0.4 },
+  '114': {
+    code: '114', geometry: 'area', colour: 'brown', family: 'landform',
+    runnability: 0.6, controlSite: true, minSizeMm: 1,
+  },
+  '115': { code: '115', geometry: 'point', colour: 'brown', family: 'landform', controlSite: true, minSizeMm: 0.6 },
 
-  // Rock and boulders.
-  '203': {
-    code: '203', geometry: 'point', colour: 'black', family: 'rock',
+  // -------------------------------------------------------------------------------------
+  // Rock and boulders. Black, and grey where it is ground rather than a thing.
+  // -------------------------------------------------------------------------------------
+  '201': {
+    code: '201', geometry: 'line', colour: 'black', family: 'rock',
+    barrier: true, barrierStrict: true, reliefBound: true, controlSite: true, minSizeMm: 0.35,
+  },
+  /**
+   * 202 cliff — the generator's `crag`, which draws it as a point with a size.
+   *
+   * A line in the standard and on every surveyed map, and that is what `geometry` says.
+   * The generator's crag is a short mark across the slope and is a point feature; both
+   * carry this code, because they are the same thing to a player and to the edit rules.
+   */
+  '202': {
+    code: '202', geometry: 'line', colour: 'black', family: 'rock',
     controlSite: true, reliefBound: true, minSizeMm: 0.5,
     ground: { slope: 'steepest', quantile: CRAG_STEEPEST },
   },
-  // A boulder has **no** ground preference, and 203 does. A crag *is* a slope break, so
+  /** 203 rocky pit or cave. Mapper splits it into 203.1 without a distinct entrance and
+   *  203.2 with one; a map that writes the bare number still resolves. */
+  '203': {
+    code: '203', geometry: 'point', colour: 'black', family: 'rock',
+    controlSite: true, reliefBound: true, minSizeMm: 0.5,
+    ground: { at: 'minimum' },
+  },
+  '203.1': {
+    code: '203.1', geometry: 'point', colour: 'black', family: 'rock',
+    controlSite: true, reliefBound: true, minSizeMm: 0.5,
+    ground: { at: 'minimum' },
+  },
+  '203.2': {
+    code: '203.2', geometry: 'point', colour: 'black', family: 'rock',
+    controlSite: true, reliefBound: true, minSizeMm: 0.5,
+  },
+  // A boulder has **no** ground preference, and 202 does. A cliff *is* a slope break, so
   // the table asks for steep ground; a boulder sits wherever the ice dropped it, and
   // asking the same of it pulled every scattered feature onto the one ridge and left the
   // rest of the map blank.
-  '206': {
-    code: '206', geometry: 'point', colour: 'black', family: 'rock',
+  /** 204 boulder — the generator's `boulder`. */
+  '204': {
+    code: '204', geometry: 'point', colour: 'black', family: 'rock',
     controlSite: true, minSizeMm: 0.4,
   },
+  '205': { code: '205', geometry: 'point', colour: 'black', family: 'rock', controlSite: true, minSizeMm: 0.6 },
+  /** 206 gigantic boulder: an area, and one of the few things on a forest map you truly
+   *  cannot cross. */
+  '206': {
+    code: '206', geometry: 'area', colour: 'black', family: 'rock',
+    runnability: 0, barrier: true, barrierStrict: true, controlSite: true, minSizeMm: 1,
+  },
+  '207': { code: '207', geometry: 'point', colour: 'black', family: 'rock', controlSite: true, minSizeMm: 0.6 },
+  '208': {
+    code: '208', geometry: 'area', colour: 'black', family: 'rock',
+    runnability: 0.6, controlSite: true, minSizeMm: 1,
+  },
+  /** The single triangle the boulder-field pattern is made of, which ISOM 2000 numbered
+   *  208 outright and a surveyor also places alone. A point, so it is not the area. */
+  '208.1': { code: '208.1', geometry: 'point', colour: 'black', family: 'rock', controlSite: true, minSizeMm: 0.6 },
+  '209': {
+    code: '209', geometry: 'area', colour: 'black', family: 'rock',
+    runnability: 0.4, controlSite: true, minSizeMm: 1,
+  },
+  /** 210, 211, 212 stony ground: one symbol at three densities, which is a runnability
+   *  scale exactly as the greens are. */
+  '210': {
+    code: '210', geometry: 'area', colour: 'black', family: 'rock',
+    runnability: 0.8, controlSite: true, minSizeMm: 1,
+  },
+  '210.1': { code: '210.1', geometry: 'point', colour: 'black', family: 'rock', minSizeMm: 0.35 },
+  '211': {
+    code: '211', geometry: 'area', colour: 'black', family: 'rock',
+    runnability: 0.6, controlSite: true, minSizeMm: 1,
+  },
   '212': {
-    code: '212', geometry: 'area', colour: 'grey', family: 'rock',
-    runnability: 0.8, minSizeMm: 1,
+    code: '212', geometry: 'area', colour: 'black', family: 'rock',
+    runnability: 0.4, controlSite: true, minSizeMm: 1,
+  },
+  '213': {
+    code: '213', geometry: 'area', colour: 'yellow', family: 'rock',
+    runnability: 0.9, controlSite: true, minSizeMm: 1,
+  },
+  /** 214 bare rock — the generator's `rock`. */
+  '214': {
+    code: '214', geometry: 'area', colour: 'grey', family: 'rock',
+    runnability: 0.8, controlSite: true, minSizeMm: 1,
     ground: { slope: 'steepest', quantile: ROCK_STEEPEST },
   },
+  '215': {
+    code: '215', geometry: 'line', colour: 'black', family: 'rock',
+    controlSite: true, reliefBound: true, minSizeMm: 0.1,
+  },
 
-  // Water.
-  '306': {
-    code: '306', geometry: 'line', colour: 'blue', family: 'water',
+  // -------------------------------------------------------------------------------------
+  // Water. A body of it is a barrier, and that is a route-choice fact before it is a
+  // drawing one.
+  // -------------------------------------------------------------------------------------
+  '301': {
+    code: '301', geometry: 'area', colour: 'blue', family: 'water',
+    runnability: 0, barrier: true, barrierStrict: true, controlSite: true, minSizeMm: 1,
+    ground: { slope: 'flattest', quantile: MARSH_FLATTEST, low: true },
+  },
+  '302': {
+    code: '302', geometry: 'area', colour: 'blue', family: 'water',
+    runnability: 0.4, controlSite: true, minSizeMm: 1,
+    ground: { slope: 'flattest', quantile: MARSH_FLATTEST, low: true },
+  },
+  '303': { code: '303', geometry: 'point', colour: 'blue', family: 'water', controlSite: true, minSizeMm: 0.5 },
+  '304': {
+    code: '304', geometry: 'line', colour: 'blue', family: 'water',
+    runnability: 0.7, controlSite: true, minSizeMm: 0.3,
+  },
+  /** 305 small crossable watercourse — the generator's `stream`. */
+  '305': {
+    code: '305', geometry: 'line', colour: 'blue', family: 'water',
     runnability: 0.7, controlSite: true, minSizeMm: 0.18,
   },
-  '311': {
-    code: '311', geometry: 'area', colour: 'blue', family: 'water',
+  '306': {
+    code: '306', geometry: 'line', colour: 'blue', family: 'water',
+    runnability: 0.9, controlSite: true, minSizeMm: 0.18,
+  },
+  '307': {
+    code: '307', geometry: 'area', colour: 'blue', family: 'water',
+    runnability: 0, barrier: true, barrierStrict: true, controlSite: true, minSizeMm: 1,
+    ground: { slope: 'flattest', quantile: MARSH_FLATTEST, low: true },
+  },
+  '308': {
+    code: '308', geometry: 'area', colour: 'blue', family: 'water',
+    runnability: 0.5, controlSite: true, minSizeMm: 1,
+    ground: { slope: 'flattest', quantile: MARSH_FLATTEST, low: true },
+  },
+  '309': {
+    code: '309', geometry: 'line', colour: 'blue', family: 'water',
+    runnability: 0.6, controlSite: true, minSizeMm: 0.1,
+  },
+  /** 310 indistinct marsh — the generator's `marsh`. */
+  '310': {
+    code: '310', geometry: 'area', colour: 'blue', family: 'water',
     runnability: 0.6, controlSite: true, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: MARSH_FLATTEST, low: true },
   },
+  '311': { code: '311', geometry: 'point', colour: 'blue', family: 'water', controlSite: true, minSizeMm: 0.5 },
+  '312': { code: '312', geometry: 'point', colour: 'blue', family: 'water', controlSite: true, minSizeMm: 0.5 },
+  '313': { code: '313', geometry: 'point', colour: 'blue', family: 'water', controlSite: true, minSizeMm: 0.5 },
 
-  // Vegetation. Green is a runnability scale, so the three densities are three codes.
+  // -------------------------------------------------------------------------------------
+  // Vegetation. Green is a runnability scale, so the densities are separate codes; white
+  // is a colour and 405 is the runnable forest everything else is the exception to.
+  // -------------------------------------------------------------------------------------
   '401': {
     code: '401', geometry: 'area', colour: 'yellow', family: 'vegetation',
+    runnability: 1, minSizeMm: 1,
+    ground: { slope: 'flattest', quantile: OPEN_MAX },
+  },
+  '402': {
+    code: '402', geometry: 'area', colour: 'yellow', family: 'vegetation',
     runnability: 1, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: OPEN_MAX },
   },
@@ -174,10 +382,21 @@ export const SEMANTICS: Readonly<Record<IsomCode, Semantics>> = {
     runnability: 0.9, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: OPEN_MAX },
   },
+  '404': {
+    code: '404', geometry: 'area', colour: 'yellow', family: 'vegetation',
+    runnability: 0.9, minSizeMm: 1,
+    ground: { slope: 'flattest', quantile: OPEN_MAX },
+  },
+  '405': { code: '405', geometry: 'area', colour: 'white', family: 'vegetation', runnability: 1, minSizeMm: 1 },
   '406': {
     code: '406', geometry: 'area', colour: 'green', family: 'vegetation',
     runnability: 0.7, minSizeMm: 1,
-    // Vegetation grows anywhere the ground is not a crag.
+    // Vegetation grows anywhere the ground is not a cliff.
+    ground: { slope: 'flattest', quantile: VEGETATION_MAX },
+  },
+  '407': {
+    code: '407', geometry: 'area', colour: 'green', family: 'vegetation',
+    runnability: 0.6, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: VEGETATION_MAX },
   },
   '408': {
@@ -185,171 +404,144 @@ export const SEMANTICS: Readonly<Record<IsomCode, Semantics>> = {
     runnability: 0.5, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: VEGETATION_MAX },
   },
-  '410': {
-    code: '410', geometry: 'area', colour: 'green', family: 'vegetation',
-    runnability: 0.25, minSizeMm: 1,
-    ground: { slope: 'flattest', quantile: VEGETATION_MAX },
-  },
-  '418': {
-    code: '418', geometry: 'point', colour: 'green', family: 'vegetation',
-    controlSite: true, minSizeMm: 0.7,
-  },
-
-  // Made by people.
-  '505': { code: '505', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.25 },
-  '508': { code: '508', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.14 },
-  '516': {
-    code: '516', geometry: 'line', colour: 'black', family: 'manmade',
-    barrier: true, minSizeMm: 0.14,
-  },
-
-  // ------------------------------------------------------------------------------------
-  // The rest of a forest map, ISOM 2000. Added with the first imported bundle; every row
-  // below is a code Mapper's own symbol set defines and a real map plausibly carries.
-  // ------------------------------------------------------------------------------------
-
-  // Relief.
-  /** The tick that tells a depression from a knoll. 104 in ISOM 2000, aliased here. */
-  '101.1': { code: '101.1', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, minSizeMm: 0.14 },
-  '106': { code: '106', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, controlSite: true, minSizeMm: 0.25 },
-  '107': { code: '107', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, minSizeMm: 0.25 },
-  '108': { code: '108', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, minSizeMm: 0.18 },
-  '109': { code: '109', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, controlSite: true, minSizeMm: 0.25 },
-  '110': { code: '110', geometry: 'line', colour: 'brown', family: 'landform', reliefBound: true, minSizeMm: 0.14 },
-  '113': {
-    code: '113', geometry: 'point', colour: 'brown', family: 'landform',
-    controlSite: true, reliefBound: true, minSizeMm: 0.6,
-    ground: { at: 'maximum' },
-  },
-  '115': {
-    code: '115', geometry: 'point', colour: 'brown', family: 'landform',
-    controlSite: true, reliefBound: true, minSizeMm: 0.8,
-    ground: { at: 'minimum' },
-  },
-  '117.1': { code: '117.1', geometry: 'point', colour: 'brown', family: 'landform', minSizeMm: 0.4 },
-  '117.2': { code: '117.2', geometry: 'point', colour: 'brown', family: 'landform', minSizeMm: 0.4 },
-  '118': { code: '118', geometry: 'point', colour: 'brown', family: 'landform', controlSite: true, minSizeMm: 0.6 },
-
-  // Rock.
-  '201': {
-    code: '201', geometry: 'line', colour: 'black', family: 'rock',
-    barrier: true, reliefBound: true, controlSite: true, minSizeMm: 0.35,
-  },
-  '202': { code: '202', geometry: 'area', colour: 'black', family: 'rock', runnability: 0.3, minSizeMm: 1 },
-  '204': {
-    code: '204', geometry: 'point', colour: 'black', family: 'rock',
-    controlSite: true, reliefBound: true, minSizeMm: 0.5,
-    ground: { at: 'minimum' },
-  },
-  '205': { code: '205', geometry: 'point', colour: 'black', family: 'rock', controlSite: true, minSizeMm: 0.5 },
-  '207': {
-    code: '207', geometry: 'point', colour: 'black', family: 'rock',
-    controlSite: true, minSizeMm: 0.6,
-    ground: { slope: 'steepest', quantile: CRAG_STEEPEST },
-  },
-  '208': { code: '208', geometry: 'point', colour: 'black', family: 'rock', controlSite: true, minSizeMm: 0.5 },
-  '209': { code: '209', geometry: 'point', colour: 'black', family: 'rock', controlSite: true, minSizeMm: 0.5 },
-  '210': { code: '210', geometry: 'point', colour: 'black', family: 'rock', minSizeMm: 0.35 },
-  '210.1': { code: '210.1', geometry: 'area', colour: 'black', family: 'rock', runnability: 0.85, minSizeMm: 1 },
-  '211': { code: '211', geometry: 'area', colour: 'yellow', family: 'rock', runnability: 0.9, minSizeMm: 1 },
-
-  // Water. A body of it is a barrier, and that is a route-choice fact before it is a
-  // drawing one.
-  '301': {
-    code: '301', geometry: 'area', colour: 'blue', family: 'water',
-    runnability: 0, barrier: true, controlSite: true, minSizeMm: 1,
-    ground: { slope: 'flattest', quantile: MARSH_FLATTEST, low: true },
-  },
-  '302': {
-    code: '302', geometry: 'area', colour: 'blue', family: 'water',
-    runnability: 0, controlSite: true, minSizeMm: 1,
-    ground: { slope: 'flattest', quantile: MARSH_FLATTEST, low: true },
-  },
-  '303': { code: '303', geometry: 'point', colour: 'blue', family: 'water', controlSite: true, minSizeMm: 0.5 },
-  '305': { code: '305', geometry: 'line', colour: 'blue', family: 'water', runnability: 0.7, controlSite: true, minSizeMm: 0.3 },
-  '307': { code: '307', geometry: 'line', colour: 'blue', family: 'water', runnability: 0.9, minSizeMm: 0.14 },
-  '308': { code: '308', geometry: 'line', colour: 'blue', family: 'water', runnability: 0.6, minSizeMm: 0.25 },
-  '309': {
-    code: '309', geometry: 'area', colour: 'blue', family: 'water',
-    runnability: 0, barrier: true, controlSite: true, minSizeMm: 1,
-    ground: { slope: 'flattest', quantile: MARSH_FLATTEST, low: true },
-  },
-  '310': {
-    code: '310', geometry: 'area', colour: 'blue', family: 'water',
-    runnability: 0.5, controlSite: true, minSizeMm: 1,
-    ground: { slope: 'flattest', quantile: MARSH_FLATTEST, low: true },
-  },
-  '312': { code: '312', geometry: 'point', colour: 'blue', family: 'water', controlSite: true, minSizeMm: 0.5 },
-  '313': { code: '313', geometry: 'point', colour: 'blue', family: 'water', controlSite: true, minSizeMm: 0.5 },
-  '314': { code: '314', geometry: 'point', colour: 'blue', family: 'water', controlSite: true, minSizeMm: 0.5 },
-
-  // Vegetation. White is a colour: 405 is the runnable forest everything else is the
-  // exception to, and it is drawn, not left out.
-  '402': {
-    code: '402', geometry: 'area', colour: 'yellow', family: 'vegetation',
-    runnability: 1, minSizeMm: 1,
-    ground: { slope: 'flattest', quantile: OPEN_MAX },
-  },
-  '404': {
-    code: '404', geometry: 'area', colour: 'yellow', family: 'vegetation',
-    runnability: 0.9, minSizeMm: 1,
-    ground: { slope: 'flattest', quantile: OPEN_MAX },
-  },
-  '405': { code: '405', geometry: 'area', colour: 'white', family: 'vegetation', runnability: 1, minSizeMm: 1 },
-  '407': {
-    code: '407', geometry: 'area', colour: 'green', family: 'vegetation',
-    runnability: 0.6, minSizeMm: 1,
-    ground: { slope: 'flattest', quantile: VEGETATION_MAX },
-  },
   '409': {
     code: '409', geometry: 'area', colour: 'green', family: 'vegetation',
     runnability: 0.4, minSizeMm: 1,
     ground: { slope: 'flattest', quantile: VEGETATION_MAX },
   },
-  '410.1': {
-    code: '410.1', geometry: 'line', colour: 'green', family: 'vegetation',
-    runnability: 0, barrier: true, minSizeMm: 0.25,
+  '410': {
+    code: '410', geometry: 'area', colour: 'green', family: 'vegetation',
+    runnability: 0.25, minSizeMm: 1,
+    ground: { slope: 'flattest', quantile: VEGETATION_MAX },
   },
-  '411': { code: '411', geometry: 'area', colour: 'green', family: 'vegetation', runnability: 0.6, minSizeMm: 1 },
+  /** 410.4 fight vegetation at its minimum width — a hedge, and under ISSprOM the
+   *  impassable one every sprint map is full of. */
+  '410.4': {
+    code: '410.4', geometry: 'line', colour: 'green', family: 'vegetation',
+    runnability: 0, barrier: true, barrierStrict: true, minSizeMm: 0.25,
+  },
+  '411': {
+    code: '411', geometry: 'area', colour: 'green', family: 'vegetation',
+    runnability: 0, barrier: true, barrierStrict: true, minSizeMm: 1,
+  },
   '412': { code: '412', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.9, minSizeMm: 1 },
-  '413': { code: '413', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.7, minSizeMm: 1 },
-  '414': { code: '414', geometry: 'line', colour: 'black', family: 'vegetation', minSizeMm: 0.14 },
-  '415': { code: '415', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.8, minSizeMm: 1 },
-  '416': { code: '416', geometry: 'line', colour: 'green', family: 'vegetation', minSizeMm: 0.25 },
-  '419': { code: '419', geometry: 'point', colour: 'green', family: 'vegetation', controlSite: true, minSizeMm: 0.7 },
-  '420': { code: '420', geometry: 'point', colour: 'green', family: 'vegetation', controlSite: true, minSizeMm: 0.7 },
-
-  // Made by people, continued.
-  '501': { code: '501', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 1 },
-  '502': { code: '502', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.7 },
-  '503': { code: '503', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.5 },
-  '504': { code: '504', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.4 },
-  '506': { code: '506', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.25 },
-  '507': { code: '507', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.2 },
-  '509': { code: '509', geometry: 'line', colour: 'black', family: 'manmade', runnability: 0.9, minSizeMm: 0.14 },
-  '511': { code: '511', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.25 },
-  '512': { code: '512', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.4 },
-  '515': { code: '515', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.35 },
-  '517': { code: '517', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.14 },
-  '519': { code: '519', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.25 },
-  '520': { code: '520', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.18 },
-  '521': { code: '521', geometry: 'line', colour: 'black', family: 'manmade', barrier: true, minSizeMm: 0.35 },
-  '525': { code: '525', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
-  '526': {
-    code: '526', geometry: 'area', colour: 'black', family: 'manmade',
-    runnability: 0, barrier: true, controlSite: true, minSizeMm: 1,
+  '413': { code: '413', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.9, minSizeMm: 1 },
+  '414': { code: '414', geometry: 'area', colour: 'yellow', family: 'vegetation', runnability: 0.7, minSizeMm: 1 },
+  '415': { code: '415', geometry: 'line', colour: 'black', family: 'vegetation', minSizeMm: 0.14 },
+  '416': {
+    code: '416', geometry: 'line', colour: 'green', family: 'vegetation',
+    controlSite: true, minSizeMm: 0.25,
   },
-  '527': { code: '527', geometry: 'area', colour: 'yellow', family: 'manmade', runnability: 0.5, minSizeMm: 1 },
-  '528': { code: '528', geometry: 'area', colour: 'purple', family: 'overprint', runnability: 0, barrier: true, minSizeMm: 1 },
-  '529': { code: '529', geometry: 'area', colour: 'grey', family: 'manmade', runnability: 1, minSizeMm: 1 },
-  '530': { code: '530', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.25 },
-  '532': { code: '532', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
-  '535': { code: '535', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.7 },
-  '536': { code: '536', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
-  '537': { code: '537', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
-  '538': { code: '538', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
-  '539': { code: '539', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
-  '540': { code: '540', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
+  /** 417 prominent large tree — the generator's `tree`, and drawn to this symbol's own
+   *  ring: 0.27 mm inner radius, 0.18 mm wide, in green. */
+  '417': { code: '417', geometry: 'point', colour: 'green', family: 'vegetation', controlSite: true, minSizeMm: 0.7 },
+  '418': { code: '418', geometry: 'point', colour: 'green', family: 'vegetation', controlSite: true, minSizeMm: 0.5 },
+  '419': { code: '419', geometry: 'point', colour: 'green', family: 'vegetation', controlSite: true, minSizeMm: 0.7 },
+
+  // -------------------------------------------------------------------------------------
+  // Made by people. 2017-2 shifted the whole road ladder down one from ISOM 2000, which
+  // is why the generator's 505 footpath was right all along and its 508 and 516 with it.
+  // -------------------------------------------------------------------------------------
+  '501': { code: '501', geometry: 'area', colour: 'grey', family: 'manmade', runnability: 1, minSizeMm: 1 },
+  /**
+   * ISSprOM's paved area with scattered trees.
+   *
+   * One of two rows that keep a **sprint** number because 2017-2 has no symbol that means
+   * this; `513.2` below is the other. Both are numbers 2017-2 does not use at all, which
+   * is the condition for keeping one — ISSprOM's `501.2`, a paved area inside a multilevel
+   * structure, is *not*, because 2017-2's own `501.2` is a paved area's bounding line, so
+   * that one is aliased onto plain paving instead of quietly redefining a number.
+   */
+  '501.3': { code: '501.3', geometry: 'area', colour: 'grey', family: 'manmade', runnability: 1, minSizeMm: 1 },
+  '502': { code: '502', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.3 },
+  '503': { code: '503', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.35 },
+  '504': { code: '504', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.35 },
+  /** 505 footpath — the generator's `path`. */
+  '505': { code: '505', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.25 },
+  '506': { code: '506', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.18 },
+  '507': { code: '507', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.18 },
+  /** 508 narrow ride — the generator's `ride`, and the standard's own meaning for the
+   *  number since 2017. */
+  '508': { code: '508', geometry: 'line', colour: 'black', family: 'manmade', runnability: 1, minSizeMm: 0.14 },
+  '509': { code: '509', geometry: 'line', colour: 'black', family: 'manmade', runnability: 0.9, minSizeMm: 0.25 },
+  '510': { code: '510', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.14 },
+  '511': { code: '511', geometry: 'line', colour: 'black', family: 'manmade', minSizeMm: 0.4 },
+  '512': { code: '512', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.18 },
+  /** 512.2 footbridge: a point, where 512 is the line a bridge or tunnel is drawn as. */
+  '512.2': { code: '512.2', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
+  '513': { code: '513', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.14 },
+  /** ISSprOM's passable retained wall — a wall that is also an earth bank. 2017-2 has one
+   *  or the other and no symbol for both, so this keeps the sprint number. */
+  '513.2': {
+    code: '513.2', geometry: 'line', colour: 'black', family: 'manmade',
+    reliefBound: true, controlSite: true, minSizeMm: 0.14,
+  },
+  '514': { code: '514', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.14 },
+  '515': {
+    code: '515', geometry: 'line', colour: 'black', family: 'manmade',
+    barrier: true, barrierStrict: true, controlSite: true, minSizeMm: 0.25,
+  },
+  /**
+   * 516 fence — the generator's `fence`.
+   *
+   * A barrier and not a strict one: a fence is crossable under both sets of rules, and it
+   * is here as the route cost it is. 518 is the one that is binding.
+   */
+  '516': {
+    code: '516', geometry: 'line', colour: 'black', family: 'manmade',
+    barrier: true, controlSite: true, minSizeMm: 0.14,
+  },
+  '517': { code: '517', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.14 },
+  '518': {
+    code: '518', geometry: 'line', colour: 'black', family: 'manmade',
+    barrier: true, barrierStrict: true, controlSite: true, minSizeMm: 0.25,
+  },
+  '519': { code: '519', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
+  /** 520 area that shall not be entered: olive, which classifies out of the ink as green,
+   *  and forbidden rather than merely slow. */
+  '520': {
+    code: '520', geometry: 'area', colour: 'green', family: 'manmade',
+    runnability: 0, barrier: true, barrierStrict: true, minSizeMm: 1,
+  },
+  '521': {
+    code: '521', geometry: 'area', colour: 'black', family: 'manmade',
+    runnability: 0, barrier: true, barrierStrict: true, controlSite: true, minSizeMm: 1,
+  },
+  /** 522 canopy: a roof over ground you can run under, so it is not a barrier. */
+  '522': {
+    code: '522', geometry: 'area', colour: 'black', family: 'manmade',
+    runnability: 0.9, controlSite: true, minSizeMm: 1,
+  },
+  '523': { code: '523', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.16 },
+  '524': { code: '524', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.7 },
+  '525': { code: '525', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
+  '526': { code: '526', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
+  '527': { code: '527', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
+  '528': { code: '528', geometry: 'line', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.14 },
+  '529': {
+    code: '529', geometry: 'line', colour: 'black', family: 'manmade',
+    barrier: true, barrierStrict: true, controlSite: true, minSizeMm: 0.25,
+  },
+  '530': { code: '530', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
+  '531': { code: '531', geometry: 'point', colour: 'black', family: 'manmade', controlSite: true, minSizeMm: 0.5 },
+  '532': {
+    code: '532', geometry: 'line', colour: 'black', family: 'manmade',
+    runnability: 1, controlSite: true, minSizeMm: 0.4,
+  },
+
+  // -------------------------------------------------------------------------------------
+  // Overprint. A course is printed over the map, in purple, and out of bounds is the only
+  // part of it the app reads as ground.
+  // -------------------------------------------------------------------------------------
+  '707': { code: '707', geometry: 'line', colour: 'purple', family: 'overprint', minSizeMm: 0.35 },
+  '708': {
+    code: '708', geometry: 'line', colour: 'purple', family: 'overprint',
+    barrier: true, barrierStrict: true, minSizeMm: 0.35,
+  },
+  '709': {
+    code: '709', geometry: 'area', colour: 'purple', family: 'overprint',
+    runnability: 0, barrier: true, barrierStrict: true, minSizeMm: 1,
+  },
 };
 
 /**
@@ -382,24 +574,28 @@ export function semanticsOf(code: IsomCode): Semantics | undefined {
  *
  * `kind` stays on a generated feature for now because the tests and the tracer still
  * speak it, but nothing may derive a code from a kind anywhere else: the moment a second
- * mapping exists, a real map's `410.1` and a generated `fight` stop being the same thing
+ * mapping exists, a real map's `410` and a generated `fight` stop being the same thing
  * to the app, which is the whole point of the table above.
+ *
+ * Every number here is ISOM 2017-2, and that is the only claim it makes: the generator
+ * decides what to draw and where, and then says which symbol it drew — so renumbering
+ * this table changed sixteen strings and no decision.
  */
 export const CODE_OF: Readonly<Record<PointKind | LineKind | AreaKind, IsomCode>> = {
-  boulder: '206',
-  knoll: '112',
-  pit: '116',
-  crag: '203',
-  tree: '418',
-  marsh: '311',
+  boulder: '204',
+  knoll: '109',
+  pit: '112',
+  crag: '202',
+  tree: '417',
+  marsh: '310',
   open: '401',
   rough: '403',
   slow: '406',
   walk: '408',
   fight: '410',
-  rock: '212',
+  rock: '214',
   path: '505',
-  stream: '306',
+  stream: '305',
   fence: '516',
   ride: '508',
 };

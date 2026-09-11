@@ -254,16 +254,27 @@ export function proposeEdit(map: OMap, rng: Rng, spec: EditSpec): Edit {
 
   const feature = pool.features[rng.int(pool.features.length)]!;
   if (pool.op === 'remove') return { op: 'remove', feature: feature.id };
-  return { op: 'swap', feature: feature.id, code: rng.pick(swapsFor(feature.code)) };
+  return { op: 'swap', feature: feature.id, code: rng.pick(swapsFor(feature)) };
 }
 
-/** Codes a feature could plausibly be mistaken for: same family, same geometry. */
-function swapsFor(code: IsomCode): readonly IsomCode[] {
-  const semantics = semanticsOf(code);
+/**
+ * Codes a feature could plausibly be mistaken for: same family, same geometry.
+ *
+ * The geometry is **the feature's own**, not the one the table gives its code. They
+ * usually agree and once they do not: 202 is a cliff, which ISOM draws as a line and the
+ * generator stands at a point, so asking the table would offer a point crag the pool of
+ * cliff and trench *lines* and then draw the winner as a black disc. What a swap has to
+ * produce is a symbol that could stand where this one does.
+ */
+function swapsFor(feature: Feature): readonly IsomCode[] {
+  const geometry = feature.geometry.kind === 'point'
+    ? 'point'
+    : feature.geometry.kind === 'polyline' ? 'line' : 'area';
+  const family = semanticsOf(feature.code)?.family;
   const others = Object.values(SEMANTICS).filter(
-    (s) => s.code !== code && s.family === semantics?.family && s.geometry === semantics?.geometry,
+    (s) => s.code !== feature.code && s.family === family && s.geometry === geometry,
   );
-  return others.length > 0 ? others.map((s) => s.code) : [code];
+  return others.length > 0 ? others.map((s) => s.code) : [feature.code];
 }
 
 /**

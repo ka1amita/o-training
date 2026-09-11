@@ -48,12 +48,28 @@ export interface OMap {
  * day a map owner asks. `scale` is the scale the cartography was drawn for — the renderer
  * does not read it, import and salience do.
  */
+/**
+ * Which discipline a map was drawn for.
+ *
+ * Not decoration: it is what makes `Semantics.barrierStrict` mean something. An
+ * impassable wall on a forest map is expensive and on a sprint map is a disqualification,
+ * and the symbol cannot say which — only the map can. Forest unless something says
+ * otherwise, because everything imported so far is.
+ */
+export type MapType = 'forest' | 'sprint';
+
 export interface MapMeta {
   readonly name: string;
   readonly scale: number;
   readonly source: 'xmap' | 'ocad' | 'image';
   readonly licence?: string;
   readonly attribution?: string;
+  /** The standard the source's own codes were in, once import has recognised it. The
+   *  features carry canon codes; this says what they were aliased from. */
+  readonly symbolSet?: string;
+  /** Defaults to `'forest'` wherever it is absent, including in bundles written before
+   *  it existed — which is the honest reading, since every one of them is a forest map. */
+  readonly mapType?: MapType;
 }
 
 export interface Vec {

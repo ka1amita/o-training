@@ -4,9 +4,10 @@ import { contoursOf } from '@/lib/terrain/contours.ts';
 import { heightGrid, sampleGridAt } from '@/lib/terrain/height.ts';
 import type { Feature, OMap } from '@/lib/terrain/omap.ts';
 import { NoRelief } from '@/lib/terrain/relief.ts';
+import { semanticsOf } from '@/lib/terrain/semantics.ts';
 import { requirementId, type WindowRequirement } from '../provider.ts';
 import { analyse, bestWindows, scoreWindows } from './analyse.ts';
-import { ALIASES, canonicalCode, resolveSemantics } from './codes.ts';
+import { ALIASES, canonicalCode, detectSymbolSet, resolveSemantics } from './codes.ts';
 import { cropTo, importXmap } from './pipeline.ts';
 import { gridFromAscii, parseAsciiGrid, rasteriseContours } from './relief.ts';
 import { parseXmap } from './xmap.ts';
@@ -17,27 +18,85 @@ const requirements: WindowRequirement[] = [
   { size: 20, needsRelief: false, minFeatures: { point: 1 } },
 ];
 
-describe('codes / aliases', () => {
-  it('moves the ISOM 2000 codes that the standard renumbered', () => {
-    expect(canonicalCode('104', 'ISOM2000')).toBe('101.1');
-    expect(canonicalCode('524', 'ISOM2000')).toBe('516');
+describe('codes / the ISOM 2017-2 canon', () => {
+  it('moves an ISOM 2000 map onto the current numbering', () => {
+    // The two families that shifted wholesale, and the reason the table is not a constant
+    // offset: relief lost two numbers at the top, paths lost one.
+    expect(canonicalCode('112', 'ISOM2000')).toBe('109'); // small knoll
+    expect(canonicalCode('116', 'ISOM2000')).toBe('112'); // pit
+    expect(canonicalCode('206', 'ISOM2000')).toBe('204'); // boulder
+    expect(canonicalCode('212', 'ISOM2000')).toBe('214'); // bare rock
+    expect(canonicalCode('311', 'ISOM2000')).toBe('310'); // indistinct marsh
+    expect(canonicalCode('506', 'ISOM2000')).toBe('505'); // footpath
+    expect(canonicalCode('104', 'ISOM2000')).toBe('101.1'); // the slope line
   });
 
-  it('moves the two the generator took for itself out of the way', () => {
-    // 508 is a narrow ride here and a less distinct small path in the standard; 516 is a
-    // fence here and a power line there. The generator's codes cannot move — every golden
-    // is over features carrying them — so the imported ones do.
+  it('moves the imported codes out of the two the generator shares with the standard', () => {
+    // 508 is a narrow ride and 516 a fence in ISOM 2017-2 *and* in the generator — which
+    // is the tell that 2017-2 was the right canon. Under ISOM 2000 those numbers were a
+    // less distinct small path and a power line, and this is where they go.
     expect(canonicalCode('508', 'ISOM2000')).toBe('507');
-    expect(canonicalCode('516', 'ISOM2000')).toBe('511');
+    expect(canonicalCode('509', 'ISOM2000')).toBe('508');
+    expect(canonicalCode('516', 'ISOM2000')).toBe('510');
     expect(canonicalCode('522', 'ISOM2000')).toBe('516');
   });
 
+  it('folds a variant sub-code onto the symbol it is a variant of', () => {
+    expect(canonicalCode('104.9', 'ISOM2017')).toBe('104');
+    expect(canonicalCode('521.3', 'ISOM2017')).toBe('521');
+    expect(canonicalCode('204', 'ISOM2017')).toBe('204');
+  });
+
+  it('keeps what ISSprOM means, not only what it numbers', () => {
+    // 410 is fight vegetation under ISOM and *impassable* under ISSprOM, so it lands on
+    // 411 and inherits the strict barrier with it. This is the row the whole alias layer
+    // exists for: a number that matches and a meaning that does not.
+    expect(canonicalCode('410', 'ISSPROM2019')).toBe('411');
+    expect(semanticsOf('411')!.barrierStrict).toBe(true);
+    expect(semanticsOf('410')!.barrierStrict).toBeUndefined();
+    // A sprint map's paved corridors are areas with a footprint; ISOM has a line ladder.
+    expect(canonicalCode('501.9', 'ISSPROM2019')).toBe('502');
+    expect(canonicalCode('505.1', 'ISSPROM2019')).toBe('505');
+    // ...and the two symbols 2017-2 has no number for keep their own.
+    expect(canonicalCode('513.2', 'ISSPROM2019')).toBe('513.2');
+    expect(semanticsOf('513.2')).toBeDefined();
+  });
+
   it('passes a symbol set it has not checked straight through', () => {
-    // Giving up rather than guessing, again: a guessed alias turns a power line into a
-    // fence, and an unaliased code still draws in its own colour.
-    expect(canonicalCode('104', 'ISOM2017')).toBe('104');
-    expect(canonicalCode('104', '')).toBe('104');
-    expect(Object.keys(ALIASES)).toEqual(['ISOM2000']);
+    // Giving up rather than guessing: a guessed alias turns a power line into a fence,
+    // and an unaliased code still draws in its own colour.
+    expect(canonicalCode('104')).toBe('104');
+    expect(Object.keys(ALIASES)).toEqual(['ISOM2000', 'ISOM2017', 'ISSPROM2019']);
+  });
+
+  it('sends every alias to a code the table knows', () => {
+    // The one invariant an alias table has: it may not move a code to a row that does not
+    // exist. An unresolved code after aliasing is worse than an unaliased one — it is a
+    // symbol the app threw away the source's own answer for.
+    for (const [set, table] of Object.entries(ALIASES)) {
+      for (const [from, to] of Object.entries(table)) {
+        expect(semanticsOf(to), `${set}: ${from} → ${to}`).toBeDefined();
+      }
+    }
+  });
+
+  it('reads the symbol set off the file', () => {
+    expect(detectSymbolSet(parseXmap(tiny)).set).toBe('ISOM2000');
+    expect(detectSymbolSet(parseXmap(tiny)).mapType).toBe('forest');
+  });
+
+  it('refuses to guess when the names say nothing', () => {
+    // Two of the three standards share almost every number, so one coincidence is not
+    // evidence. Nothing recognised means nothing aliased, which is the safe answer.
+    const anonymous = parseXmap(tiny.replace(' id="ISOM2000"', '').replace(/name="[^"]*"/g, 'name=""'));
+    expect(detectSymbolSet(anonymous).set).toBeUndefined();
+    expect(detectSymbolSet(anonymous).mapType).toBe('forest');
+  });
+
+  it('an override beats both', () => {
+    const detected = detectSymbolSet(parseXmap(tiny), 'ISSPROM2019');
+    expect(detected.set).toBe('ISSPROM2019');
+    expect(detected.mapType).toBe('sprint');
   });
 
   it('keeps an unknown code, with the colour its own map drew it in', () => {
@@ -157,8 +216,8 @@ describe('analyse', () => {
     scale: 10000,
     relief: new NoRelief(100),
     features: [
-      feature('a', '206', 10, 10),
-      feature('b', '112', 50, 50),
+      feature('a', '204', 10, 10),
+      feature('b', '109', 50, 50),
       { id: 'c', code: '516', geometry: { kind: 'polyline', points: [{ x: 0, y: 0 }, { x: 90, y: 90 }] } },
       {
         id: 'd',
@@ -201,7 +260,7 @@ describe('scoreWindows', () => {
     // should not be offered at all.
     features: Array.from({ length: 12 }, (_, i): Feature => ({
       id: `p${i}`,
-      code: '206',
+      code: '204',
       geometry: { kind: 'point', at: { x: 10 + (i % 4) * 8, y: 10 + Math.floor(i / 4) * 8 } },
     })),
   };
@@ -283,7 +342,7 @@ describe('cropTo', () => {
     expect(kept.length).toBeGreaterThan(0);
     expect(kept.length).toBeLessThan(features.length);
     const moved = cropTo(features, { x: 5, y: 5, size: 40 });
-    const point = moved.find((f) => f.code === '112')!;
+    const point = moved.find((f) => f.code === '109')!;
     expect(point.geometry).toEqual({ kind: 'point', at: { x: 0, y: 2 } });
   });
 

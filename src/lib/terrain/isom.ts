@@ -233,14 +233,14 @@ export const POINT = {
   /** 202 cliff. */ cliffWidth: mm(0.25),
   cliffTagWidth: mm(0.12),
   cliffTagLength: mm(0.25),
-  /** 418-ish distinctive vegetation feature, a green ring. */
+  /** 417 prominent large tree: a green ring, 0.27 mm inner radius and 0.18 mm wide. */
   treeRadius: mm(0.35),
   treeWidth: mm(0.18),
 } as const;
 
 export const LINE = {
   /** 304 crossable watercourse. */ streamWidth: mm(0.3),
-  /** 305 small crossable watercourse. */ smallStreamWidth: mm(0.18),
+  /** 305 small crossable watercourse — the generator's stream. */ smallStreamWidth: mm(0.18),
   /** 505 footpath. */ pathWidth: mm(0.25),
   pathDash: [mm(2), mm(0.25)] as const,
   /** 508 narrow ride: a dashed black line over a light background. */
@@ -268,7 +268,7 @@ export const MARSH = {
 
 
 /**
- * How each code is drawn.
+ * What a picture of a symbol is.
  *
  * The renderer used to `switch` on the generator's `kind`, which meant only the sixteen
  * things the generator makes could ever be drawn. Keyed by code, an imported feature goes
@@ -283,7 +283,7 @@ export const MARSH = {
  */
 export interface AreaStyle {
   readonly geometry: 'area';
-  /** 311 is a pattern and never a wash: solid blue is open water, and to whoever is
+  /** 310 is a pattern and never a wash: solid blue is open water, and to whoever is
    *  running the two mean opposite things — one is crossable and slow, the other a detour. */
   readonly pattern?: 'marsh';
   readonly fill?: string;
@@ -311,19 +311,34 @@ export interface PointStyle {
 
 export type SymbolStyle = AreaStyle | LineStyle | PointStyle;
 
-export const SYMBOL: Readonly<Record<IsomCode, SymbolStyle>> = {
+/**
+ * How each code is drawn — ISOM 2017-2 numbers, like everything else keyed by code.
+ *
+ * A code may name **more than one picture**, because a code says what a thing is and not
+ * what shape it was drawn in: 202 is a cliff, which a surveyor draws as a line along the
+ * break and the generator draws as a short tagged mark at a point. `styleFor` is asked
+ * for the geometry the feature actually has and picks the matching entry; a code with one
+ * entry answers with it whatever is asked, which is every other row here.
+ *
+ * That is also the trap this list hit before: the entry's geometry had to agree with the
+ * feature's or `MapView` drew **nothing** — `Line` returns null for a point style — so a
+ * surveyed map's cliffs would have vanished the moment the generator's crag took the same
+ * code. A style that does not match now falls through to the plain symbol of the right
+ * geometry instead of to an empty patch of forest.
+ */
+export const SYMBOL: Readonly<Record<IsomCode, SymbolStyle | readonly SymbolStyle[]>> = {
   // Areas.
-  '311': { geometry: 'area', pattern: 'marsh' },
+  '310': { geometry: 'area', pattern: 'marsh' },
   '401': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.open },
   '403': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough },
   '406': { geometry: 'area', fill: COLOUR.green, opacity: GREEN_SCREEN.slow },
   '408': { geometry: 'area', fill: COLOUR.green, opacity: GREEN_SCREEN.walk },
   '410': { geometry: 'area', fill: COLOUR.green, opacity: GREEN_SCREEN.fight },
-  '212': { geometry: 'area', fill: COLOUR.grey, opacity: 0.5 },
+  '214': { geometry: 'area', fill: COLOUR.grey, opacity: 0.5 },
 
   // Lines.
   '505': { geometry: 'line', stroke: COLOUR.black, width: LINE.pathWidth, dash: LINE.pathDash },
-  '306': { geometry: 'line', stroke: COLOUR.blue, width: LINE.smallStreamWidth },
+  '305': { geometry: 'line', stroke: COLOUR.blue, width: LINE.smallStreamWidth },
   '516': {
     geometry: 'line',
     stroke: COLOUR.black,
@@ -339,69 +354,96 @@ export const SYMBOL: Readonly<Record<IsomCode, SymbolStyle>> = {
   },
 
   // Points.
-  '206': { geometry: 'point', shape: 'disc', colour: COLOUR.black, radius: POINT.boulderRadius },
-  '112': { geometry: 'point', shape: 'disc', colour: COLOUR.brown, radius: POINT.knollRadius },
-  '116': { geometry: 'point', shape: 'triangle', colour: COLOUR.brown, radius: POINT.pitRadius },
-  '418': {
+  '204': { geometry: 'point', shape: 'disc', colour: COLOUR.black, radius: POINT.boulderRadius },
+  '109': { geometry: 'point', shape: 'disc', colour: COLOUR.brown, radius: POINT.knollRadius },
+  '112': { geometry: 'point', shape: 'triangle', colour: COLOUR.brown, radius: POINT.pitRadius },
+  '417': {
     geometry: 'point', shape: 'ring', colour: COLOUR.green,
     radius: POINT.treeRadius, width: POINT.treeWidth,
   },
-  '203': {
-    geometry: 'point', shape: 'cliff', colour: COLOUR.black,
-    radius: POINT.cliffWidth, width: POINT.cliffTagWidth,
-  },
+  /** 202 cliff: the line a surveyor drew, and the mark the generator stands at a point. */
+  '202': [
+    { geometry: 'line', stroke: COLOUR.black, width: mm(0.25) },
+    {
+      geometry: 'point', shape: 'cliff', colour: COLOUR.black,
+      radius: POINT.cliffWidth, width: POINT.cliffTagWidth,
+    },
+  ],
 
   // Codes an imported map brought with it, where the colour fallback would draw them
   // wrongly rather than merely plainly. The rest fall back, and this list grows a row at
   // a time, checked by eye on `#/dev/maps` — which is the existing practice and the only
-  // one that scales to 120 symbols.
+  // one that scales to 190 symbols.
 
   /** 405 forest, easy running: white, and **opaque**. It is the ground, not a wash over it. */
   '405': { geometry: 'area', fill: COLOUR.ground, opacity: 1 },
-  /** 407, 409 undergrowth: the green scale between 406 and 410. */
+  /** 407, 409 vegetation with good visibility: the green scale between 406 and 410. */
   '407': { geometry: 'area', fill: COLOUR.green, opacity: 0.4 },
   '409': { geometry: 'area', fill: COLOUR.green, opacity: 0.6 },
-  '411': { geometry: 'area', fill: COLOUR.green, opacity: 0.4 },
-  '415': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough },
+  /** 411 impassable vegetation: darker than fight, because it is a wall of it. */
+  '411': { geometry: 'area', fill: COLOUR.green, opacity: 0.85 },
+  '412': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough },
+  '413': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough },
+  '414': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough },
   '404': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.rough },
   '402': { geometry: 'area', fill: COLOUR.yellow, opacity: YELLOW_SCREEN.open },
-  /** 526 building: solid, because a building is the one thing on a map you cannot run through. */
-  '526': { geometry: 'area', fill: COLOUR.black, opacity: 1 },
-  '527': { geometry: 'area', fill: COLOUR.yellow, opacity: 0.35 },
-  '529': { geometry: 'area', fill: COLOUR.grey, opacity: 0.35 },
-  '202': { geometry: 'area', fill: COLOUR.black, opacity: 0.55 },
-  '210.1': { geometry: 'area', fill: COLOUR.grey, opacity: 0.6 },
-  '310': { geometry: 'area', pattern: 'marsh' },
-  '309': { geometry: 'area', pattern: 'marsh' },
+  /** 521 building: solid, because a building is the one thing on a map you cannot run through. */
+  '521': { geometry: 'area', fill: COLOUR.black, opacity: 1 },
+  /** 520 out of bounds: olive, which is ISOM's yellow under a screen of its green. */
+  '520': { geometry: 'area', fill: COLOUR.green, opacity: 0.45 },
+  '501': { geometry: 'area', fill: COLOUR.grey, opacity: 0.35 },
+  '501.3': { geometry: 'area', fill: COLOUR.grey, opacity: 0.35 },
+  /** 206 gigantic boulder, an area of solid rock. */
+  '206': { geometry: 'area', fill: COLOUR.black, opacity: 0.55 },
+  /** 210, 211, 212 stony ground: black dots on paper, a grey screen here, in the three
+   *  densities the standard has. */
+  '210': { geometry: 'area', fill: COLOUR.grey, opacity: 0.45 },
+  '211': { geometry: 'area', fill: COLOUR.grey, opacity: 0.6 },
+  '212': { geometry: 'area', fill: COLOUR.grey, opacity: 0.75 },
+  '308': { geometry: 'area', pattern: 'marsh' },
+  '307': { geometry: 'area', pattern: 'marsh' },
   '301': { geometry: 'area', fill: COLOUR.blue, opacity: 1 },
   '302': { geometry: 'area', fill: COLOUR.blue, opacity: 1 },
-  '211': { geometry: 'area', fill: COLOUR.yellow, opacity: 0.3 },
+  '213': { geometry: 'area', fill: COLOUR.yellow, opacity: 0.3 },
+  '522': { geometry: 'area', fill: COLOUR.grey, opacity: 0.5 },
 
   // Roads and paths, thickest first. A path drawn at the same weight as the contour it
-  // crosses is the wrongness that reads as "generated" without being nameable.
+  // crosses is the wrongness that reads as "generated" without being nameable. The ladder
+  // runs 502 wide road, 503 road, 504 vehicle track, 505 footpath, 506 small footpath,
+  // 507 less distinct, 508 ride — one number lower than ISOM 2000 drew each of them.
   '502': { geometry: 'line', stroke: COLOUR.black, width: mm(0.7) },
   '503': { geometry: 'line', stroke: COLOUR.black, width: mm(0.5) },
   '504': { geometry: 'line', stroke: COLOUR.black, width: mm(0.35) },
   '506': { geometry: 'line', stroke: COLOUR.black, width: LINE.pathWidth, dash: LINE.pathDash },
   '507': { geometry: 'line', stroke: COLOUR.black, width: mm(0.2), dash: LINE.pathDash },
-  '509': {
-    geometry: 'line',
-    stroke: COLOUR.black,
-    width: LINE.rideWidth,
-    dash: LINE.rideDash,
-    casing: { stroke: COLOUR.ground, width: LINE.rideBackground },
-  },
+  '509': { geometry: 'line', stroke: COLOUR.black, width: mm(0.25) },
+  '532': { geometry: 'line', stroke: COLOUR.black, width: mm(0.4) },
   /** 201 impassable cliff: heavy, and the barrier the semantic table says it is. */
   '201': { geometry: 'line', stroke: COLOUR.black, width: mm(0.35) },
-  '305': { geometry: 'line', stroke: COLOUR.blue, width: LINE.streamWidth },
-  '308': { geometry: 'line', stroke: COLOUR.blue, width: mm(0.25) },
-  '106': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.25) },
+  /** 515 impassable wall, 518 impassable fence: the sprint map's two binding lines. */
+  '515': { geometry: 'line', stroke: COLOUR.black, width: mm(0.25) },
+  '518': {
+    geometry: 'line',
+    stroke: COLOUR.black,
+    width: mm(0.25),
+    ticks: { spacing: LINE.fenceTickSpacing, length: LINE.fenceTickLength },
+  },
+  '513': { geometry: 'line', stroke: COLOUR.black, width: mm(0.14) },
+  '304': { geometry: 'line', stroke: COLOUR.blue, width: LINE.streamWidth },
+  '306': { geometry: 'line', stroke: COLOUR.blue, width: mm(0.18), dash: [mm(1.5), mm(0.4)] },
+  '309': { geometry: 'line', stroke: COLOUR.blue, width: mm(0.25) },
+  '104': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.25) },
+  '105': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.25) },
+  '106': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.25), dash: [mm(1.5), mm(0.4)] },
   '107': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.25) },
-  '109': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.25) },
-  '110': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.14) },
-  '414': { geometry: 'line', stroke: COLOUR.black, width: mm(0.14), dash: [mm(1.5), mm(0.4)] },
+  '108': { geometry: 'line', stroke: COLOUR.brown, width: mm(0.14) },
+  '415': { geometry: 'line', stroke: COLOUR.black, width: mm(0.14), dash: [mm(1.5), mm(0.4)] },
   '416': { geometry: 'line', stroke: COLOUR.green, width: mm(0.25), dash: [mm(1.5), mm(0.4)] },
-  '115': { geometry: 'point', shape: 'triangle', colour: COLOUR.brown, radius: POINT.pitRadius },
+  '111': { geometry: 'point', shape: 'triangle', colour: COLOUR.brown, radius: POINT.pitRadius },
+  '418': {
+    geometry: 'point', shape: 'ring', colour: COLOUR.green,
+    radius: mm(0.25), width: POINT.treeWidth,
+  },
   '419': {
     geometry: 'point', shape: 'ring', colour: COLOUR.green,
     radius: POINT.treeRadius, width: POINT.treeWidth,
@@ -435,17 +477,29 @@ export interface StyleFallback {
 }
 
 /**
- * The style for a code, or the plainest symbol of its colour class.
+ * The style for a code in the geometry it was asked for, or the plainest symbol of its
+ * colour class.
  *
- * An unknown code is not an error: ~120 symbols exist and a few dozen are drawn here, so
+ * An unknown code is not an error: ~190 symbols exist and a few dozen are drawn here, so
  * a real map will arrive with some. Drawing one plainly is what makes a map readable from
  * day one; fidelity then grows a row at a time, checked by eye on `#/dev/maps`.
+ *
+ * **The caller's geometry wins over the table's.** It is the one the feature actually
+ * has, and the table's is the standard's idea of the symbol — a cliff is a line there and
+ * the generator stands one at a point. Asking the table first is how a surveyed 202 would
+ * have come back with a point style and then been dropped by `MapView`, which draws
+ * nothing for a style whose geometry disagrees with the feature's.
  */
 export function styleFor(code: IsomCode, fallback?: StyleFallback): SymbolStyle | undefined {
   const known = SYMBOL[code];
-  if (known) return known;
+  const wanted = fallback?.geometry;
+  if (known) {
+    const styles = Array.isArray(known) ? known : [known as SymbolStyle];
+    const match = wanted ? styles.find((s) => s.geometry === wanted) : styles[0];
+    if (match) return match;
+  }
   const semantics = semanticsOf(code);
-  const geometry = semantics?.geometry ?? fallback?.geometry;
+  const geometry = wanted ?? semantics?.geometry;
   const colour = PLAIN[semantics?.colour ?? fallback?.colour ?? 'black'];
   if (!geometry) return undefined;
   if (geometry === 'area') return { geometry: 'area', fill: colour, opacity: 0.5 };

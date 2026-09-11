@@ -2,14 +2,14 @@ import { ISOM_SCALE } from '@/lib/terrain/isom.ts';
 import type { Grid } from '@/lib/terrain/height.ts';
 import {
   boundsOf, translated,
-  type Crop, type Feature, type MapMeta, type OMap,
+  type Crop, type Feature, type MapMeta, type MapType, type OMap,
 } from '@/lib/terrain/omap.ts';
 import { NoRelief } from '@/lib/terrain/relief.ts';
 import type { IsomCode } from '@/lib/terrain/semantics.ts';
 import { saveBundle, type MapBundle } from '../bundle.ts';
 import type { WindowRequirement } from '../provider.ts';
 import { analyse, scoreWindows } from './analyse.ts';
-import { resolveSemantics, type Unresolved } from './codes.ts';
+import { detectSymbolSet, resolveSemantics, type SymbolSet, type Unresolved } from './codes.ts';
 import { attachRelief } from './relief.ts';
 import { buildRaster, type RasterInput, type RasterStage } from './raster.ts';
 import { parseXmap } from './xmap.ts';
@@ -25,7 +25,8 @@ import { parseXmap } from './xmap.ts';
  * Stages, in order, each in its own module:
  *
  * 1. `xmap.ts`    — the file into geometry in metres
- * 2. `codes.ts`   — symbol codes into the app's own, with a report of what did not resolve
+ * 2. `codes.ts`   — the source's symbol set, then its codes onto the app's ISOM 2017-2
+ *                  canon, with a report of what did not resolve
  * 3. `relief.ts`  — a DEM, or contour levels reconstructed from the drawing, or nothing
  * 4. `raster.ts`  — a picture into a colour mask, cropped and georeferenced
  * 5. `analyse.ts` — landform candidates, barriers, a runnability raster; blobs from a mask
@@ -62,6 +63,17 @@ export interface ImportOptions {
    * not a map, and 1:15000 is the standard's own scale.
    */
   readonly scale?: number;
+  /**
+   * The standard the source's codes are in, when the file does not say or says wrongly.
+   *
+   * `detectSymbolSet` reads it off the file first — Mapper writes its set's id into every
+   * map drawn with it — and this overrules that. An import that guesses wrong is not a
+   * missing symbol but a wrong one, so the escape hatch exists and the log says which
+   * answer was used.
+   */
+  readonly symbolSet?: SymbolSet;
+  /** Forest unless the symbol set or this says sprint. See `MapMeta.mapType`. */
+  readonly mapType?: MapType;
 }
 
 export interface ImportReport {
@@ -93,7 +105,17 @@ export function importXmap(xml: string, options: ImportOptions): ImportReport {
       `(${parsed.symbolSet || 'no symbol set named'})`,
   );
 
-  const resolution = resolveSemantics(parsed);
+  // Which standard the codes are in, before anything reads one. A map resolves at a
+  // hundred per cent or nearly none: the alias layer is the difference between a boulder
+  // and a gigantic boulder, not between a known symbol and an unknown one.
+  const detected = detectSymbolSet(parsed, options.symbolSet);
+  const mapType = options.mapType ?? detected.mapType;
+  notes.push(
+    `symbol set: ${detected.set ?? 'none'} (${detected.reason}); ${mapType} map` +
+      (options.mapType && options.mapType !== detected.mapType ? ', given on the command line' : ''),
+  );
+
+  const resolution = resolveSemantics(parsed, detected.set);
   notes.push(
     `semantics: ${resolution.resolved} of ${resolution.features.length} features on ` +
       `${resolution.codes.length} codes; ${resolution.unresolved.length} codes unresolved`,
@@ -122,6 +144,8 @@ export function importXmap(xml: string, options: ImportOptions): ImportReport {
     source: 'xmap',
     ...(options.licence ? { licence: options.licence } : {}),
     ...(options.attribution ? { attribution: options.attribution } : {}),
+    ...(detected.set ? { symbolSet: detected.set } : {}),
+    mapType,
   };
 
   // A picture under the drawing, if one was given. The map's extent stays the drawing's:
@@ -190,6 +214,9 @@ export function importImage(options: ImportOptions & { raster: RasterInput }): I
       source: 'image',
       ...(options.licence ? { licence: options.licence } : {}),
       ...(options.attribution ? { attribution: options.attribution } : {}),
+      // A picture has no symbol table to read a standard off, so only the command line
+      // can say — and a sprint map photographed is still a sprint map.
+      mapType: options.mapType ?? 'forest',
     },
   };
 
