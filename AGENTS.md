@@ -547,3 +547,62 @@ Commit work to a separate branch. At the end rebase on top of `main` and verify 
 ## Style
 
 Maintain manually edited configs (e.g., `.gitignore`) lexicographically sorted.
+
+## Surveyed landforms
+
+Added with the classifier in `terrain/analysis.ts`. Everything above still holds; this is
+what a candidate now says about itself and what it refuses to say.
+
+- **The sign of the amplitude is not the form.** A hollow on a hillside and a closed
+  depression have the same sign and only one is a depression. `classifyLandform` walks
+  **sixteen rays** out to three radii and ends each where the ground first falls or first
+  climbs a contour interval — the question the contours answer, since a line closes on the
+  side the ground drops below it. All falling is a hill, all climbing a depression, one
+  contiguous arc of climbing rays among falling ones a spur (and the other way round a
+  re-entrant), two arcs each way a saddle.
+- **Whichever comes first, and the band is symmetric.** A knoll on a shoulder rises three
+  metres toward the summit and then plunges twenty; read as "this side climbs" it is a
+  spur, and the map draws a closed ring round it. Asymmetric thresholds named half of those
+  wrong.
+- **The bar is the contour interval, and there is no amplitude bar beside it.** A form the
+  map draws no line round is not a form a control description can name. Gating on amplitude
+  as well changes 2 candidates in 3500.
+- **Confidence is the share of the sixteen rays that agreed**, and fourteen of them is the
+  threshold — one number over one kind of evidence, so a form cannot pass on one test while
+  being weak on another. A ray that decided nothing is a ray that did not agree.
+- **An open form needs a majority of ten.** Half the rays of a plain hillside fall and half
+  climb, whatever the slope; without the majority a candidate on a bare slope was a spur on
+  the strength of one ray.
+- **The axis is measured, not thresholded.** The principal-axis fit is accurate — a median
+  8 degrees off the generator's own — and `rotation`/`elongation` travel with every
+  candidate whose region is big enough to fit, named or not. Its *ratio* is not: a
+  curvature candidate sits at the nose, where the region is not elongated, so the plan's
+  `elongation >= 1.6` gate halved the spurs without improving them. What is asked of an
+  open form is that its axis lie along the local fall, or it is a terrace across the slope
+  and there is no word for it.
+- **`saddle` is classified and dropped.** `LandformKind` has no word for it and neither has
+  map dohledavka's `CONTROL_NAMES`. One candidate in six on generated ground is one, so
+  adding the word to both is worth doing — in one change, not in two.
+- **What the two oracles say** (`analysis.test.ts`, a hundred generated maps): against the
+  contours the map draws, hill 0.95 and depression 0.97; spur 0.52 and re-entrant 0.94.
+  Up against down is never wrong. Against the generator's own landform list the depression
+  column is 0.34, and that is the *list* being wrong, not the classifier: **40 of 58
+  candidates standing on a spur bump are inside a closed contour ring**, because an
+  elongated bump's falloff along its own crest beats the regional tilt more often than not
+  and the map draws an elongated knoll. Name the map, not the parameter.
+- **On the forest sample 19 of 54 candidates get a name**, and 9 of the 11 that pass the
+  drill's own `standsOut` do. The unnamed are not a gap to close by loosening: 21 are
+  elongated across the fall — terraces and benches, which the answer space cannot name —
+  one is a saddle, and the rest have less than an interval of relief, which is exactly what
+  `standsOut` would throw away anyway.
+
+**A window is never framed on the padding.** A map is stored square and padded to its
+longer side, and stage five used to argue that empty ground scores nothing so no window
+would be framed there. The forest sample: the top window of all fifteen requirement lists
+began at `y: 0`, on a drawing that starts at y = 68.7 m, a quarter of the card blank. The
+lattice was laid from (0, 0), and padding cost a *point* of score where holding the busiest
+ground on the map is worth two. Candidates now start at the drawing's own edges, the last
+offset is pinned to its far side, and more than a twentieth of a window outside
+`drawnExtent(map)` scores zero like anything else a window cannot answer. Asked only of a
+drawing the card fits inside: a map drawn smaller than the window that wants it has no
+framing that avoids the paper, and refusing every window would be refusing the map.

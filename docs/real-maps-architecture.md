@@ -937,3 +937,103 @@ every outcome it is told about.
 `phase: 'review'` draw its answer with `Verdict` beside whatever emphasis suits its
 geometry — a ring, a border — and take no more input. Nothing else; `DrillPage` owns the
 Continue, the focus and the keys.
+
+## Package C, and where it departs from §1.4 and §4.1
+
+Surveyed landform classification and the window padding rule. Both are stage four and
+stage five of §4.1, revisited once there was a real map to measure on.
+
+### A candidate says which form it is
+
+§4.1 stage 4 gets a candidate as far as "a piece of ground with an extent and an
+amplitude", which is all a warp needs and not enough for a control description. The
+plan that opened this package proposed: sign for hill against depression, a principal-axis
+fit for `elongation`/`rotation`, elongated along the fall for spur against re-entrant. Two
+of those three survived measurement.
+
+- **The sign decides nothing on its own.** A hollow on a hillside and a closed depression
+  have the same sign and only one of them is a depression. What decides is **sixteen rays**
+  walked out to three radii, each ending where the ground first falls or first climbs a
+  contour interval. That is the question the contours answer — a line closes on the side the
+  ground drops below it — so a candidate named a hill is one whose card will show a closed
+  ring. Every ray falling is a hill, every ray climbing a depression, one contiguous arc of
+  climbing rays among falling ones a spur, two arcs each way a saddle.
+- **The band is symmetric and the first crossing wins.** A knoll on a shoulder rises three
+  metres toward the summit and then plunges twenty. Read as "this side climbs" it is a spur,
+  and the map draws a closed ring round it: with asymmetric thresholds half the candidates
+  named spur stood inside one.
+- **The axis is kept for its direction and not for its ratio.** The principal-axis fit is
+  accurate — a median 8 degrees off the generator's own rotation — and `rotation` and
+  `elongation` travel with every candidate whose region is big enough to fit one, named or
+  not. But a curvature candidate sits at the *nose* of a spur, where the region is not
+  elongated (median 2.1 against 1.5 on a hill), so the plan's `elongation >= 1.6` gate
+  halved the spurs without improving what they were. The fall test the plan asks for is
+  kept as a gate: an elongated form across the fall is a terrace, and the answer space has
+  no word for one.
+- **The bar is the contour interval and there is no amplitude bar beside it.** Gating on
+  the candidate's own amplitude as well changes 2 candidates in 3500 on generated ground,
+  because a form the map draws no line round has no ray that crosses the band.
+- **`saddle` is classified and dropped.** `LandformKind` cannot carry it and neither can
+  map dohledavka's `CONTROL_NAMES`; a word the drill cannot say is a card with no answer.
+  One candidate in six on generated ground is a col, so the two changes are worth making
+  together.
+
+### Measuring it needed two oracles, and the second one is the interesting result
+
+`analysis.test.ts` scores every candidate on a hundred generated maps against **the
+contours the map draws** (traced by marching squares at a different resolution from the
+grid the classifier probes) and against **the generator's own landform list**.
+
+| kind | named | drawn | list | up/down | recall |
+|------|-------|-------|------|---------|--------|
+| hill | 133 | 0.95 | 0.77 | 1.00 | 0.47 |
+| depression | 101 | 0.97 | 0.34 | 1.00 | 0.57 |
+| spur | 21 | 0.52 | 0.30 | 1.00 | 0.03 |
+| re-entrant | 17 | 0.94 | 0.88 | 1.00 | 0.05 |
+
+The list column is not the classifier failing. **40 of 58 candidates standing on a spur
+bump are inside a closed contour ring**: an elongated bump's falloff along its own crest is
+steeper than the regional tilt more often than not, so the ground the generator draws there
+is an elongated knoll and an orienteer would call it one. Naming it a spur would be naming
+the parameter rather than the map. The same effect is why the depression column reads 0.34
+against the list and 0.97 against the drawing.
+
+Only 272 of 3500 candidates are named, which is the same measurement step 6 already acted
+on when it had the generator hand over its own landforms: a generated map carries a metre of
+micro-relief at a sixty-metre wavelength and curvature finds all of it.
+
+**On the forest sample**: 19 of 54 candidates named — 11 spur, 5 re-entrant, 2 depression,
+1 hill — and 9 of the 11 that pass map dohledavka's own `standsOut` test. The plan's
+acceptance number was 60% of candidates; the honest answer is 35%, and the other 65% is
+not slack to be taken up. 21 are elongated across the fall (terraces and benches, which
+`LandformKind` cannot name and which both fall estimators agree about), 1 is a saddle, and
+the rest have less than an interval of relief, which `standsOut` would discard anyway.
+The drill's own numbers on that map, over 20 seeds a level: controls a round 3.9/3.4/3.8 to
+**6.0/7.0/6.4** at levels 1/5/10, distinct kinds 2.9/2.4/2.8 to **5.0/6.0/5.4**, relief
+controls 0 to 2.1–2.9.
+
+### Nothing is framed on the padding
+
+§4.1's stage five scored every window on the square map and argued that empty padding
+scores nothing, so no window would be framed on it. Measured on the forest sample, the top
+window of **all fifteen** requirement lists began at `y: 0` on a drawing that starts at
+y = 68.7 m, with up to 24.5% of the card blank paper. Two causes, both fixed:
+
+- the candidate lattice was laid from (0, 0), so on a 300 m card with a 75 m stride every
+  candidate in the top row sat at the same offset into the margin. Candidates now start at
+  the drawing's own edges, and the last offset is pinned to its far side so the strip a
+  whole number of strides cannot reach is offered too;
+- padding cost a *point* of score where holding the busiest ground on the map is worth two.
+  More than a twentieth of a window outside `drawnExtent(map)` now scores zero, like
+  anything else a window cannot answer — asked only of a drawing the card fits inside,
+  since a map drawn smaller than the window that wants it has no framing that avoids the
+  paper and refusing every window would be refusing the map.
+
+Windows per requirement on the forest sample, before to after: 16→15 for the four 300 m
+lists, 4→6 at 380 m, 16→20 at 280 and 289 m, 16→15 at 298–316 m, 9→12 at 324–351 m, 9→8 at
+360 m. Worst share of a kept window outside the drawing: 24.5% → 0.0%. Several lists grew,
+because the old lattice was spending a third of its rows on ground the map does not have.
+
+`drawnExtent` moved from a private function in `terrain/analysis.ts` to an exported one:
+the candidates are clipped to that box and so are the windows, and a second idea of where
+the map is would be a second place for it to be wrong.
