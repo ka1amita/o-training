@@ -21,17 +21,18 @@ npm install && npm run dev
 | Posunuté pexeso | Pairs are two offset crops of one map sharing a control. Match by recognising the ground |
 | Contours → relief | Read the brown lines, then pick the ground they describe |
 | Map memory | A map extract, briefly. Then pick the one you saw |
+| Mapa vs. skutečnost | The map has been changed. Tap everything that is not as it was |
 
-The drills that give you one attempt a round — both dohledávkas, contours and map memory —
-then show you the answer, with the right one ticked and a wrong pick crossed, and wait for
-**Continue** before the next round; the clock stopped when you tapped, so looking as long
-as you like costs nothing. Two-player Dohledávka marks the shared symbol for a moment and
-moves both players on by itself.
+The drills that give you one attempt a round — both dohledávkas, contours, map memory and
+Mapa vs. skutečnost — then show you the answer, with the right one ticked and a wrong pick
+crossed, and wait for **Continue** before the next round; the clock stopped when you
+tapped, so looking as long as you like costs nothing. Two-player Dohledávka marks the
+shared symbol for a moment and moves both players on by itself.
 
 Difficulty follows a 3-down-1-up staircase: three correct moves you up, one miss moves you
 down. It settles where you are right about 79% of the time.
 
-The three map drills run on maps generated on your device. **Settings** (from the bottom of
+The five map drills run on maps generated on your device. **Settings** (from the bottom of
 the home screen) can switch them to windows onto real, surveyed maps, or to a mix in
 whatever proportion you like; the round header says `gen` or `real` for the ground you were
 given. A real map is downloaded the first time it is used and then kept on the device, so a

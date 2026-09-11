@@ -1,5 +1,6 @@
 import { contours } from './contours/drill.ts';
 import { dohledavka } from './dohledavka/drill.ts';
+import { mapDiff } from './mapDiff/drill.ts';
 import { mapDohledavka } from './mapDohledavka/drill.ts';
 import { mapMemory } from './mapMemory/drill.ts';
 import { matchMadness } from './matchMadness/drill.ts';
@@ -17,6 +18,7 @@ export const DRILLS: readonly AnyDrill[] = [
   pexeso,
   contours,
   mapMemory,
+  mapDiff,
 ];
 
 export function drillById(id: string): AnyDrill | undefined {
