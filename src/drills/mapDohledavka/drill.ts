@@ -4,7 +4,7 @@ import {
   type MapProvider, type RoundContext, type WindowRequirement,
 } from '@/lib/maps/provider.ts';
 import type { Rng } from '@/lib/rng.ts';
-import type { Crop, OMap } from '@/lib/terrain/omap.ts';
+import { sameGround, type Crop, type OMap } from '@/lib/terrain/omap.ts';
 import { byKind, sitesOf, type ControlKind, type Site } from './features.ts';
 import Play from './Play.tsx';
 
@@ -162,7 +162,11 @@ function draft(
  * 194 m, so two of them always share at least a fifth of their ground.
  */
 function overlap(a: Draft, b: Draft): number {
-  if (a.map !== b.map) return 0;
+  // `sameGround` and not `===`: the adjusted source returns a fresh object for every
+  // window it hands out, so two crops of one surveyed sheet are two `OMap`s. Asking for
+  // object identity made every adjusted pair look like two maps and turned this whole
+  // rule off on the one source that needed it most.
+  if (!sameGround(a.map, b.map)) return 0;
   const wide = Math.min(a.crop.x + a.crop.size, b.crop.x + b.crop.size) - Math.max(a.crop.x, b.crop.x);
   const high = Math.min(a.crop.y + a.crop.size, b.crop.y + b.crop.size) - Math.max(a.crop.y, b.crop.y);
   if (wide <= 0 || high <= 0) return 0;
@@ -390,7 +394,7 @@ export const mapDohledavka = defineDrill<MapDobbleRound, MapDobbleAnswer>({
     // The same window on the same map, which is the one thing two cards may never be:
     // every kind on one is then a kind on the other. Two windows on one big map are two
     // cards, and the library is what makes that possible.
-    if (a.map === b.map && a.crop.x === b.crop.x && a.crop.y === b.crop.y
+    if (sameGround(a.map, b.map) && a.crop.x === b.crop.x && a.crop.y === b.crop.y
       && a.crop.size === b.crop.size) {
       problems.push('both cards are the same ground');
     }

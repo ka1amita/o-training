@@ -352,3 +352,22 @@ export const insideCrop = (p: Vec, crop: Crop): boolean =>
 
 /** The whole map as a window, for a drill that shows all of it. */
 export const wholeMap = (map: OMap): Crop => ({ x: 0, y: 0, size: map.width });
+
+/**
+ * Whether two maps are windows onto **one drawing**.
+ *
+ * Object identity is the obvious test and it was the only one until a source started
+ * handing out a fresh object per pick: `AdjustedProvider` returns `applyEdits(bundle, …)`,
+ * so two windows of one surveyed sheet are two `OMap`s that are not `===` each other. Two
+ * cards of Mapova dohledavka then read as two maps when they are two crops of one, which
+ * is exactly the comparison "the second card is never the window the first is showing"
+ * rests on — measured on the forest sample at level 10, 3 rounds in 40 were the *same*
+ * window twice and nothing said so.
+ *
+ * `meta` is what answers it, because `meta` is the half of a map that adjusting does not
+ * touch: it is provenance — the file, the licence, the scale — and every map derived from
+ * one bundle carries that same record. A generated map has none and is only ever itself,
+ * which is right: the generator draws a new map for every pick.
+ */
+export const sameGround = (a: OMap, b: OMap): boolean =>
+  a === b || (a.meta !== undefined && a.meta === b.meta);

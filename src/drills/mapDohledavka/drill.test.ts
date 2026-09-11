@@ -30,14 +30,19 @@ class Shelf implements MapProvider {
     private readonly windows: number,
     /** How far apart the windows are, as a share of one. 0 stacks them almost exactly. */
     private readonly stride = 0.002,
+    /** A fresh object per pick, as `AdjustedProvider` hands out: the same sheet, edited. */
+    private readonly fresh = false,
   ) {
-    this.id = `shelf:${windows}:${stride}`;
+    this.id = `shelf:${windows}:${stride}:${fresh}`;
   }
 
   pick(rng: Rng): { map: OMap; crop: Crop } {
     const { map, crop } = this.ground;
     const step = rng.int(this.windows) * this.stride * crop.size;
-    return { map, crop: { ...crop, x: crop.x + step, y: crop.y + step } };
+    return {
+      map: this.fresh ? { ...map } : map,
+      crop: { ...crop, x: crop.x + step, y: crop.y + step },
+    };
   }
 }
 
@@ -273,6 +278,35 @@ describe('map dohledavka / generate', () => {
           const [a, b] = round.cards;
           expect(a.map === b.map && a.crop.x === b.crop.x && a.crop.y === b.crop.y).toBe(false);
         }
+      }
+    }
+  });
+
+  it('counts two windows of one adjusted sheet as one map, not two', () => {
+    // The seam between this rule and the adjusted source. `AdjustedProvider` returns
+    // `applyEdits(bundle, …)`, which is a **fresh object** for every window it hands out,
+    // so two crops of one surveyed sheet stopped being `===` each other — and the whole
+    // rule above, which asked exactly that, quietly turned itself off on the one source
+    // whose library is smallest. Measured on the forest sample before `sameGround`: the
+    // two cards were the *same* window in 3 rounds of 40 at level 10, 1 of 40 at level 5,
+    // and `wellFormed` said nothing about any of them.
+    const base = new GeneratedProvider().pick(seeded(7), requirementFor(5));
+    const sheet = {
+      map: { ...base.map, meta: { name: 'sheet', scale: 15000, source: 'xmap' as const } },
+      crop: base.crop,
+    };
+
+    for (let seed = 0; seed < 30; seed++) {
+      for (const level of [1, 5, 10]) {
+        const round = drill.generate(seeded(seed), level, { maps: new Shelf(sheet, 1, 0.002, true) });
+        expect(drill.wellFormed(round), `seed ${seed} level ${level}`).toEqual([]);
+        // Stated without asking `sameGround` about itself: the shelf has one window, so
+        // two cards off *this* sheet are two drawings of one card. The way out is the
+        // generator, and a generated map carries no `meta`.
+        const [a, b] = round.cards;
+        const twins = a.map.meta?.name === 'sheet' && b.map.meta?.name === 'sheet'
+          && a.crop.x === b.crop.x && a.crop.y === b.crop.y && a.crop.size === b.crop.size;
+        expect(twins, `seed ${seed} level ${level}`).toBe(false);
       }
     }
   });
