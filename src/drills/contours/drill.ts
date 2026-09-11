@@ -43,6 +43,7 @@ export function requirementFor(level: number): WindowRequirement {
   return {
     size: 380,
     needsRelief: true,
+    level,
     relief: { minRange: 20, maxRange: 40 },
     minFeatures: { landform: terrainParams(level, 380).landforms, point: 0, line: 0, area: 0 },
     rides: 0,

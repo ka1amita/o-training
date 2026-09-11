@@ -1,4 +1,6 @@
-import type { Rng } from '@/lib/rng.ts';
+import { hashJson, type Rng } from '@/lib/rng.ts';
+import { applyEdits } from '@/lib/terrain/edits.ts';
+import { budgetFor, proposeEnrichment, scaledBy } from '@/lib/terrain/enrich.ts';
 import { wholeMap, type Crop, type OMap } from '@/lib/terrain/omap.ts';
 import { generateTerrain, type TerrainParams } from '@/lib/terrain/terrain.ts';
 
@@ -69,6 +71,19 @@ export interface WindowRequirement {
   readonly maxRunnabilityCover?: number;
   /** A sub-window the provider should pick, if the drill shows less than all of it. */
   readonly crop?: number;
+  /**
+   * Which rung of the ladder asked, when the drill is willing to say.
+   *
+   * Deliberately **not** part of `requirementId`: a level does not change which ground
+   * answers the question — `minFeatures` is a floor on a real map — so two levels asking
+   * for the same square of forest must keep sharing one scored window list. It is here
+   * for a provider that makes ground rather than only selecting it, which so far is
+   * `AdjustedProvider`: how much a window is worth adjusting is a difficulty knob, and
+   * the requirement is the only thing that crosses from the drill to the provider.
+   *
+   * Optional, and a provider that reads it has to have an answer for its absence.
+   */
+  readonly level?: number;
 }
 
 /**
@@ -166,6 +181,74 @@ export class LibraryProvider implements MapProvider {
         y: window_.y + rng.range(0, window_.size - size),
         size,
       },
+    };
+  }
+}
+
+/**
+ * The level a requirement that names none is adjusted at.
+ *
+ * The middle of the ladder. A drill that has not been taught to say which rung it is on
+ * still gets an adjusted window — the alternative is a source that quietly does nothing
+ * for one drill and everything for the others, which is worse than a middling answer.
+ */
+const UNSTATED_LEVEL = 5;
+
+/**
+ * A library of real maps, made busier — the third source.
+ *
+ * A surveyed map is not a generated one with better cartography. It is a map of ground
+ * that happens to have nothing on it in places, and a window onto it can be four hundred
+ * metres of white forest with a path across the corner. This picks a real window exactly
+ * as `LibraryProvider` does and then lets `proposeEnrichment` put back the detail a drill
+ * needs, at the level's own budget and this policy's intensity.
+ *
+ * Three things make it safe to put a round on:
+ *
+ *  - **The edits are the map.** `applyEdits` is the only thing that produces what the
+ *    player sees, so a round is still a function of the rng, and everything downstream —
+ *    `siblings`, `sitesOf`, `wellFormed`, `score` — reads features and never pixels. A
+ *    distractor is still `base + edits` where the base is now this map.
+ *  - **The id names what was done.** `adjusted:<bundle>:<hash of the edits>`, so two
+ *    windows of one bundle adjusted differently are two maps and say so. `sourceOf` reads
+ *    `adjusted` and badges the round `adj`.
+ *  - **It declines exactly when the library does.** No window, no map: `MixedProvider`
+ *    then falls through to the generator, which is what keeps the contours drill working
+ *    on a library with no relief.
+ *
+ * At intensity 0 it is the library, **draw for draw** — an empty budget proposes nothing
+ * and consumes no numbers — and the map that comes back is the bundle's own, unadjusted
+ * and badged `real`, because that is what the round is on.
+ */
+export class AdjustedProvider implements MapProvider {
+  readonly id: string;
+  readonly library: LibraryProvider;
+  readonly intensity: number;
+
+  constructor(library: LibraryProvider | readonly OMap[], intensity: number) {
+    this.library = library instanceof LibraryProvider ? library : new LibraryProvider(library);
+    this.intensity = Math.min(1, Math.max(0, intensity));
+    // Both halves, because both change the rounds: which maps, and how hard they are
+    // adjusted. Two decimals and no trailing zeros, as `MixedProvider` writes a share.
+    this.id = `adjusted:${Number(this.intensity.toFixed(2))}:${this.library.id}`;
+  }
+
+  pick(rng: Rng, requirement: WindowRequirement): { map: OMap; crop: Crop } | null {
+    const picked = this.library.pick(rng, requirement);
+    if (!picked) return null;
+    const budget = scaledBy(budgetFor(requirement.level ?? UNSTATED_LEVEL), this.intensity);
+    const edits = proposeEnrichment(picked.map, picked.crop, rng, budget);
+    // Nothing proposed is nothing to say: the window is the bundle's own, and a map that
+    // wore an `adjusted:` id with an empty edit list would be a badge claiming a change
+    // the round does not have.
+    if (edits.length === 0) return picked;
+    return {
+      map: {
+        ...applyEdits(picked.map, edits),
+        id: `adjusted:${picked.map.id}:${hashJson(edits)}`,
+        adjusted: true,
+      },
+      crop: picked.crop,
     };
   }
 }

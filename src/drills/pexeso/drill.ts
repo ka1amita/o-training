@@ -69,6 +69,7 @@ export function requirementFor(level: number): WindowRequirement {
   return {
     size: 300,
     needsRelief: false,
+    level,
     minControlSites: paramsFor(level).pairs,
     minFeatures: {
       landform: scale(6, 10),

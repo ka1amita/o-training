@@ -32,6 +32,16 @@ export interface OMap {
   /** Where the map came from. Absent on a generated one, which came from a seed. */
   readonly meta?: MapMeta;
   /**
+   * Edits were applied to this map after whatever drew it drew it.
+   *
+   * Beside `meta` rather than inside it, because `meta` is **provenance** — a name, a
+   * licence, the file it was imported from — and adjusting a map does not change where it
+   * came from. It is the badge's only input for `adj` (`sourceOf`), and it is a fact
+   * about the map rather than about the source, so it is equally true of an adjusted
+   * generated map as of an adjusted surveyed one.
+   */
+  readonly adjusted?: boolean;
+  /**
    * Windows the pipeline scored, keyed by `WindowRequirement.id`.
    *
    * On the map rather than beside it because they *are* a fact about the map: which of

@@ -59,6 +59,7 @@ export function requirementFor(level: number): WindowRequirement {
   return {
     size: 300,
     needsRelief: false,
+    level,
     crop: CROP_SIZE,
     minFeatures: {
       landform: scale(5, 9),
