@@ -40,9 +40,22 @@ export interface SessionState {
   readonly bestStreak: number;
 }
 
+/**
+ * `answered` records the attempt; `continue` moves on. Two events rather than one because
+ * the round is looked at after it is answered: the correct answer is revealed and the
+ * player confirms. Between the two the session is paused on a round it already knows the
+ * score of — which is why nothing but `records` moves on `answered`, and why the response
+ * time is measured at `answered` and the next round's clock starts at `continue`. A player
+ * who studies the reveal for twenty seconds has not got slower.
+ *
+ * A drill that gives its own feedback (Match Madness, Pexeso) never pauses: `DrillPage`
+ * dispatches `continue` in the same breath as `answered`, and those sessions behave
+ * exactly as they did when there was one event.
+ */
 export type SessionEvent =
   | { readonly type: 'round-started'; readonly at: number }
   | { readonly type: 'answered'; readonly score: Score; readonly at: number }
+  | { readonly type: 'continue'; readonly at: number }
   | { readonly type: 'finished'; readonly at: number };
 
 export interface SessionInit {
@@ -89,6 +102,9 @@ export function reduce(
       // A late or duplicated answer past the last round changes nothing. Without this
       // a double-tap on the final round appends a record the session never planned.
       if (state.index >= state.total) return state;
+      // Nor does a second answer to the round now being reviewed: the attempt is over and
+      // its time is taken, and a stray tap must not overwrite it with a slower one.
+      if (awaitingContinue(state)) return state;
 
       const startedAt = state.roundStartedAt ?? state.startedAt;
       // Clamped: a clock that steps backwards mid-round must not record a negative
@@ -100,13 +116,26 @@ export function reduce(
         score: event.score,
         responseMs,
       };
+      // The record, and nothing else. The round counter, the level and the streak are on
+      // screen while the answer is being looked at, and a header that moved under the
+      // reveal would say the next round had started when it has not.
+      return { ...state, records: [...state.records, record] };
+    }
+
+    case 'continue': {
+      const record = state.records[state.records.length - 1];
+      // Confirming a round that was never answered is a stray key on the way to the
+      // first tap. Idempotent for the same reason: Enter on a focused button arrives
+      // twice on some keyboards, and the second one must not skip a round.
+      if (!record || !awaitingContinue(state)) return state;
+
       const index = state.index + 1;
-      const streak = event.score.passed ? state.streak + 1 : 0;
+      const streak = record.score.passed ? state.streak + 1 : 0;
       return {
         ...state,
         index,
-        staircase: advance(state.staircase, event.score.passed, bounds),
-        records: [...state.records, record],
+        staircase: advance(state.staircase, record.score.passed, bounds),
+        // The next round becomes answerable now — the reveal is not part of its time.
         roundStartedAt: event.at,
         streak,
         bestStreak: Math.max(state.bestStreak, streak),
@@ -118,6 +147,17 @@ export function reduce(
     case 'finished':
       return { ...state, finishedAt: event.at };
   }
+}
+
+/**
+ * Whether the round in play has been answered and is waiting to be confirmed.
+ *
+ * Derived rather than stored: `records` grows on `answered` and `index` on `continue`, so
+ * one being ahead of the other *is* the review phase, and a second field saying so is a
+ * second thing to keep true.
+ */
+export function awaitingContinue(state: SessionState): boolean {
+  return state.finishedAt === null && state.records.length > state.index;
 }
 
 /** The seed for the round now being played. */

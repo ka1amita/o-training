@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { start, reduce, summarise, median, currentSeed, type SessionState } from './session.ts';
+import {
+  awaitingContinue, start, reduce, summarise, median, currentSeed, type SessionState,
+} from './session.ts';
 import type { StaircaseBounds } from './staircase.ts';
 import type { Score } from '@/drills/types.ts';
 
@@ -11,8 +13,13 @@ const bad: Score = { correct: 0, total: 1, passed: false };
 const fresh = (total = 3, at = 1000): SessionState =>
   start({ drillId: 'test', seed: 42, total, bounds: B, level: 5, at });
 
-const answer = (s: SessionState, score: Score, at: number) =>
+const report = (s: SessionState, score: Score, at: number) =>
   reduce(s, { type: 'answered', score, at }, B);
+
+const confirm = (s: SessionState, at: number) => reduce(s, { type: 'continue', at }, B);
+
+/** Answer and confirm in one step, as a drill without a review phase does. */
+const answer = (s: SessionState, score: Score, at: number) => confirm(report(s, score, at), at);
 
 describe('session', () => {
   it('records response time from the round start, not the session start', () => {
@@ -103,6 +110,57 @@ describe('session', () => {
     const sum = summarise(s)!;
     expect(sum).toMatchObject({ rounds: 2, correct: 1, total: 2, accuracy: 0.5, endLevel: 4 });
     expect(sum.medianResponseMs).toBe(300); // median of 400 and 200
+  });
+
+  it('records the answer without moving on, and moves on when told', () => {
+    let s = fresh(3);
+    s = report(s, ok, 1400);
+    // The attempt is taken: it has a score and a time.
+    expect(s.records).toHaveLength(1);
+    expect(s.records[0]!.responseMs).toBe(400);
+    // And nothing else has moved, because the answer is still on screen.
+    expect(s.index).toBe(0);
+    expect(s.staircase.level).toBe(5);
+    expect(s.streak).toBe(0);
+    expect(awaitingContinue(s)).toBe(true);
+
+    s = confirm(s, 9000);
+    expect(s.index).toBe(1);
+    expect(s.streak).toBe(1);
+    expect(awaitingContinue(s)).toBe(false);
+  });
+
+  it('takes the time at the answer, so a long look at the reveal costs nothing', () => {
+    // The whole point of the two events. One session answers every round 400 ms in and
+    // studies the reveal for twenty seconds; the other taps straight on. Same medians.
+    const studied = [0, 1, 2].reduce(
+      (s, i) => confirm(report(s, ok, 1000 + i * 20_400 + 400), 1000 + (i + 1) * 20_400),
+      fresh(3),
+    );
+    const brisk = [0, 1, 2].reduce((s, i) => answer(s, ok, 1000 + i * 400 + 400), fresh(3));
+
+    expect(studied.records.map((r) => r.responseMs)).toEqual([400, 400, 400]);
+    expect(summarise(studied)!.medianResponseMs).toBe(summarise(brisk)!.medianResponseMs);
+  });
+
+  it('summarises only after the last round is confirmed', () => {
+    let s = fresh(1);
+    s = report(s, ok, 1300);
+    expect(s.finishedAt).toBeNull();
+    expect(summarise(s)).toBeNull();
+    s = confirm(s, 5000);
+    expect(summarise(s)!.finishedAt).toBe(5000);
+  });
+
+  it('ignores a second answer to the round being reviewed, and a repeated continue', () => {
+    let s = fresh(3);
+    s = report(s, ok, 1400);
+    // A stray tap during the reveal must not overwrite a fast answer with a slow one.
+    expect(report(s, bad, 9000)).toBe(s);
+    s = confirm(s, 2000);
+    // Enter arriving twice on one button press skips no round.
+    expect(confirm(s, 2000)).toBe(s);
+    expect(s.index).toBe(1);
   });
 
   it('records which source the rounds ran on', () => {

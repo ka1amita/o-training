@@ -148,7 +148,11 @@ function RunningSession({ drill, ready }: { drill: AnyDrill; ready: Ready }) {
 
   const onDone = useCallback(
     (answers: unknown[]) => {
-      dispatch({ type: 'answered', score: drill.score(round, answers), at: Date.now() });
+      // One clock reading for both: the response time is taken at the answer, and the
+      // next round's starts where this one ends.
+      const at = Date.now();
+      dispatch({ type: 'answered', score: drill.score(round, answers), at });
+      dispatch({ type: 'continue', at });
     },
     [drill, round],
   );
