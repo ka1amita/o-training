@@ -299,6 +299,16 @@ const CONTOUR_INTERVAL = 5;
 const KIND_CONFIDENCE = 0.875;
 
 /**
+ * How many rays the majority side of an open form has to hold, of sixteen.
+ *
+ * An even split is not a form, it is a hillside: on a plane exactly half the rays fall and
+ * half climb, whatever the slope, and a candidate there would be a spur or a re-entrant on
+ * the strength of one ray. Ten of sixteen is a form standing clear of the slope it is on,
+ * and it costs one spur and two re-entrants of the measured table.
+ */
+const PROFILE_MAJORITY = 10;
+
+/**
  * How nearly the long axis has to lie along the fall, as |cos| of the angle between them.
  *
  * 0.71 is 45 degrees: past it the axis is more along the fall than across it, which is
@@ -383,7 +393,11 @@ export function classifyLandform(
   // high nor a low.
   if (arcs === 4) return { form: 'saddle', confidence: decided, ...axes };
 
-  if (arcs === 2 && climbing >= 2 && falling >= 2 && decided >= KIND_CONFIDENCE && region) {
+  const majority = Math.max(falling, climbing);
+  if (
+    arcs === 2 && climbing >= 2 && falling >= 2 && majority >= PROFILE_MAJORITY
+    && decided >= KIND_CONFIDENCE && region
+  ) {
     const alignment = Math.abs(
       Math.cos(region.rotation) * region.fall.x + Math.sin(region.rotation) * region.fall.y,
     );
