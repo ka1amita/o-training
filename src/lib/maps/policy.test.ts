@@ -40,6 +40,22 @@ describe('MapPolicy', () => {
     expect(bundlesFor({ source: 'real', library: ['a.json'] })).toEqual(['a.json']);
   });
 
+  it('reads a record written before adjustment existed, rather than throwing it away', async () => {
+    // Every policy already on a device says nothing about intensity. That is an older
+    // record and not a malformed one: it reads as itself, and the missing knob reads as
+    // its default. What is refused is a value that is *there* and is not a fraction.
+    const old = { source: 'mixed', realShare: 0.4, library: ['forest-sample.json'] };
+    expect(parsePolicy(old)).toEqual(old);
+    expect(parsePolicy({ source: 'adjusted', library: [] }))
+      .toEqual({ source: 'adjusted', library: [] });
+    expect(parsePolicy({ source: 'adjusted', library: [], intensity: 0.7 }))
+      .toEqual({ source: 'adjusted', library: [], intensity: 0.7 });
+    for (const junk of [-1, 2, 'half', null]) {
+      expect(parsePolicy({ source: 'adjusted', library: [], intensity: junk }), String(junk))
+        .toEqual(DEFAULT_POLICY);
+    }
+  });
+
   it('reads a malformed record as no policy rather than a half-applied one', async () => {
     // The same rule as `loadProgress`: storage gets cleared and written by older builds,
     // and a policy half-read is a provider whose id lies about the rounds it makes.
@@ -102,6 +118,33 @@ describe('providerFor', () => {
     expect(providerFor({ source: 'mixed', realShare: 9, library: [] }, [imported]).id)
       .toBe('mixed:0*generated+1*library:abc123');
   });
+
+  it('adjusted names the library and how hard it is adjusted, with the generator behind', () => {
+    // Built exactly as `real` is — the generator at weight zero, never drawn and always
+    // there — because the adjusted source declines precisely when the library does.
+    expect(providerFor({ source: 'adjusted', library: [] }, [imported]).id)
+      .toBe('mixed:1*adjusted:0.5:library:abc123+0*generated');
+    expect(providerFor({ source: 'adjusted', intensity: 1, library: [] }, [imported]).id)
+      .toBe('mixed:1*adjusted:1:library:abc123+0*generated');
+  });
+
+  it('a mix is generated and real, and adjustment is not in it', () => {
+    // The decision, asserted so that changing it has to be deliberate: the share says how
+    // often a round is on a real map and the intensity says how much was put back on the
+    // window, and one slider driving both would make one id name two sets of rounds. It
+    // would also change what every device already storing `mixed` plays.
+    const withIntensity = providerFor(
+      { source: 'mixed', realShare: 0.3, intensity: 1, library: [] }, [imported],
+    );
+    expect(withIntensity.id).toBe('mixed:0.7*generated+0.3*library:abc123');
+    expect(withIntensity.id)
+      .toBe(providerFor({ source: 'mixed', realShare: 0.3, library: [] }, [imported]).id);
+  });
+
+  it('with nothing loaded, adjusted is the plain generator like every other source', () => {
+    const nothing = providerFor({ source: 'adjusted', library: ['forest.json'] }, []);
+    expect(nothing.id).toBe('generated');
+  });
 });
 
 describe('the badge a round wears', () => {
@@ -141,5 +184,18 @@ describe('sourceOf', () => {
     expect(sourceOf(new GeneratedProvider().pick(seeded(1), requirement).map)).toBe('gen');
     // A bundle with no `meta` is still not the generator: its id is a content hash.
     expect(sourceOf(anonymous)).toBe('real');
+  });
+
+  it('says `adj` for a map that was adjusted, and only for one that was', () => {
+    // `OMap.adjusted` and nothing else: a window the adjusted source handed back with no
+    // edits on it is a real round, and a badge saying otherwise would be the badge lying
+    // about the round — the same rule as `mix`.
+    const busy: OMap = { ...imported, id: 'adjusted:abc123:0f0f0f0f', adjusted: true };
+    expect(sourceOf(busy)).toBe('adj');
+    expect(sourceBadge([busy, busy])).toBe('adj');
+    expect(sourceBadge([busy, imported])).toBe('mix');
+    // Equally true of an adjusted generated map, which is what the discrepancy drill wants.
+    const generated = new GeneratedProvider().pick(seeded(1), requirement).map;
+    expect(sourceOf({ ...generated, adjusted: true })).toBe('adj');
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'wouter';
 import { BUNDLED_MAPS, bundleUrl, loadLibrary } from '@/lib/maps/library.ts';
 import {
-  DEFAULT_POLICY, DEFAULT_REAL_SHARE, loadPolicy, savePolicy,
+  DEFAULT_INTENSITY, DEFAULT_POLICY, DEFAULT_REAL_SHARE, loadPolicy, savePolicy,
   type MapPolicy, type PolicySource,
 } from '@/lib/maps/policy.ts';
 import { idb } from '@/lib/store.ts';
@@ -56,6 +56,7 @@ export default function Settings() {
   };
 
   const share = Math.round((policy.realShare ?? DEFAULT_REAL_SHARE) * 100);
+  const intensity = Math.round((policy.intensity ?? DEFAULT_INTENSITY) * 100);
 
   return (
     <div className="flex flex-col gap-5 pt-2">
@@ -78,13 +79,38 @@ export default function Settings() {
           note="Windows onto the surveyed maps below. Falls back to a generated map where none of them can answer a drill."
         />
         <Source
+          value="adjusted"
+          policy={policy}
+          onPick={update}
+          title="Adjusted real maps"
+          note="The same surveyed maps, with plausible extra detail added to each extract — a boulder where the ground is broken, a knoll on a rise. Real ground that a drill has enough to ask about."
+        />
+        <Source
           value="mixed"
           policy={policy}
           onPick={update}
           title="Mixed"
-          note="Both, in proportion."
+          note="Generated and real, in proportion."
         />
       </fieldset>
+
+      {policy.source === 'adjusted' && (
+        <label className="flex flex-col gap-2">
+          <span className="text-sm text-muted">
+            How much is added: <span className="tabular-nums text-paper">{intensity}%</span>
+            {intensity === 0 && ' — nothing, so these are the real maps'}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={10}
+            value={intensity}
+            onChange={(e) => update({ ...policy, intensity: Number(e.target.value) / 100 })}
+            className="w-full accent-flag"
+          />
+        </label>
+      )}
 
       {policy.source === 'mixed' && (
         <label className="flex flex-col gap-2">

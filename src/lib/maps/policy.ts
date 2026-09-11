@@ -2,7 +2,7 @@ import { POLICY_KEY, type KeyValue } from '@/lib/store.ts';
 import type { OMap } from '@/lib/terrain/omap.ts';
 import { BUNDLED_MAPS } from './library.ts';
 import {
-  GeneratedProvider, LibraryProvider, MixedProvider, type MapProvider,
+  AdjustedProvider, GeneratedProvider, LibraryProvider, MixedProvider, type MapProvider,
 } from './provider.ts';
 
 /**
@@ -14,12 +14,21 @@ import {
  * part of what a round *is*, which is why `providerFor` is the only way to turn one into a
  * provider and why the id it produces names every source that can appear.
  */
-export type PolicySource = 'generated' | 'real' | 'mixed';
+export type PolicySource = 'generated' | 'real' | 'mixed' | 'adjusted';
 
 export interface MapPolicy {
   readonly source: PolicySource;
   /** `mixed` only: the share of rounds drawn from the library, 0 to 1. */
   readonly realShare?: number;
+  /**
+   * `adjusted` only: how much of a level's edit budget to spend, 0 to 1.
+   *
+   * Its own knob and **not** folded into `realShare`, because they answer different
+   * questions: the share says how often a round is on a real map, and this says how much
+   * was put back on the window when it is. One slider meaning both would make one id name
+   * two different sets of rounds.
+   */
+  readonly intensity?: number;
   /**
    * Which maps the library holds, by bundle name — `forest-sample.json`, not a URL.
    *
@@ -43,6 +52,9 @@ export const DEFAULT_POLICY: MapPolicy = { source: 'generated', library: BUNDLED
 /** The share of real rounds a mix starts at, in the 10% steps the slider offers. */
 export const DEFAULT_REAL_SHARE = 0.3;
 
+/** How hard an adjusted window is adjusted before anybody moves the slider. Half. */
+export const DEFAULT_INTENSITY = 0.5;
+
 /**
  * A stored policy, or the default.
  *
@@ -54,20 +66,24 @@ export const DEFAULT_REAL_SHARE = 0.3;
 export function parsePolicy(stored: unknown): MapPolicy {
   if (typeof stored !== 'object' || stored === null) return DEFAULT_POLICY;
   const raw = stored as Record<string, unknown>;
-  if (raw.source !== 'generated' && raw.source !== 'real' && raw.source !== 'mixed') {
-    return DEFAULT_POLICY;
-  }
+  const sources: readonly unknown[] = ['generated', 'real', 'mixed', 'adjusted'];
+  if (!sources.includes(raw.source)) return DEFAULT_POLICY;
   if (!Array.isArray(raw.library) || raw.library.some((name) => typeof name !== 'string')) {
     return DEFAULT_POLICY;
   }
+  // A record written before this build knew about intensity has none, and that is not a
+  // malformed record — it is an older record, and it reads as the default. What is
+  // refused is a value that is *there* and is not a fraction.
+  const fraction = (value: unknown) =>
+    value === undefined || (typeof value === 'number' && value >= 0 && value <= 1);
   const share = raw.realShare;
-  if (share !== undefined && (typeof share !== 'number' || !(share >= 0 && share <= 1))) {
-    return DEFAULT_POLICY;
-  }
+  const intensity = raw.intensity;
+  if (!fraction(share) || !fraction(intensity)) return DEFAULT_POLICY;
   return {
-    source: raw.source,
+    source: raw.source as PolicySource,
     library: raw.library as string[],
     ...(typeof share === 'number' ? { realShare: share } : {}),
+    ...(typeof intensity === 'number' ? { intensity } : {}),
   };
 }
 
@@ -101,16 +117,34 @@ export function providerFor(policy: MapPolicy, maps: readonly OMap[]): MapProvid
   if (policy.source === 'generated' || maps.length === 0) return generated;
 
   const library = new LibraryProvider(maps);
-  if (policy.source === 'real') {
+  if (policy.source === 'real' || policy.source === 'adjusted') {
     // Zero, not absent: the library is the only source rounds are *drawn* from, and the
     // generator is what catches a requirement it cannot serve — the contours drill on a
     // library with no relief. See `MixedProvider`.
+    const real = policy.source === 'real'
+      ? library
+      : new AdjustedProvider(library, policy.intensity ?? DEFAULT_INTENSITY);
     return new MixedProvider([
-      { provider: library, weight: 1 },
+      { provider: real, weight: 1 },
       { provider: generated, weight: 0 },
     ]);
   }
 
+  /**
+   * **A mix is generated and real, and adjustment is not in it.**
+   *
+   * The obvious alternative — let the share slider spread rounds over three sources, or
+   * quietly swap the real part for the adjusted one when the intensity is up — was turned
+   * down twice over. The share and the intensity answer different questions (how often a
+   * round is on a real map, and how much was put back on the window when it is), so one
+   * slider driving both would make one id name two different sets of rounds. And every
+   * device already storing `mixed` would change what it plays on the day this shipped,
+   * for a source nobody asked it for.
+   *
+   * Adjustment is therefore a source of its own, sitting beside `real` and built the same
+   * way. A player who wants some of their rounds adjusted picks `adjusted` and turns the
+   * intensity down, which is the same knob from the other end.
+   */
   const share = Math.min(1, Math.max(0, policy.realShare ?? DEFAULT_REAL_SHARE));
   return new MixedProvider([
     { provider: generated, weight: 1 - share },
@@ -124,9 +158,14 @@ export function providerFor(policy: MapPolicy, maps: readonly OMap[]): MapProvid
  * Read off the map's own `meta` — a bundle records where it came from — and off its id for
  * the generator, which has no file to have come from. Never off what was drawn: the badge
  * in the round header is a fact about the round's structure, like everything else here.
+ *
+ * `adj` is asked first and is a fact about the map rather than about the policy: a window
+ * the adjusted source handed back with no edits on it is a **real** round and says so.
  */
-export const sourceOf = (map: OMap): 'gen' | 'real' =>
-  map.meta || map.id !== 'generated' ? 'real' : 'gen';
+export const sourceOf = (map: OMap): 'gen' | 'real' | 'adj' =>
+  map.adjusted ? 'adj'
+  : map.meta || map.id !== 'generated' ? 'real'
+  : 'gen';
 
 /**
  * One word for the maps a round is on, or nothing when it is on none.
@@ -135,7 +174,7 @@ export const sourceOf = (map: OMap): 'gen' | 'real' =>
  * under a mixed policy two of six pairs can be real. Calling that round `real` because its
  * first pair was would be a badge that says something the round does not.
  */
-export function sourceBadge(maps: readonly OMap[]): 'gen' | 'real' | 'mix' | null {
+export function sourceBadge(maps: readonly OMap[]): 'gen' | 'real' | 'adj' | 'mix' | null {
   if (maps.length === 0) return null;
   const first = sourceOf(maps[0]!);
   return maps.every((map) => sourceOf(map) === first) ? first : 'mix';
