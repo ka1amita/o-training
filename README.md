@@ -22,6 +22,12 @@ npm install && npm run dev
 | Contours → relief | Read the brown lines, then pick the ground they describe |
 | Map memory | A map extract, briefly. Then pick the one you saw |
 
+The drills that give you one attempt a round — both dohledávkas, contours and map memory —
+then show you the answer, with the right one ticked and a wrong pick crossed, and wait for
+**Continue** before the next round; the clock stopped when you tapped, so looking as long
+as you like costs nothing. Two-player Dohledávka marks the shared symbol for a moment and
+moves both players on by itself.
+
 Difficulty follows a 3-down-1-up staircase: three correct moves you up, one miss moves you
 down. It settles where you are right about 79% of the time.
 

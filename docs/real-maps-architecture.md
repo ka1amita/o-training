@@ -825,3 +825,43 @@ node scripts/import-map.mjs map.xmap --image map.png --world map.pgw --name koko
 - [karttapullautin](https://github.com/karttapullautin/karttapullautin) — LiDAR →
   contours/vegetation/cliffs, GPL-3.0, Rust; produces DXF contours and a DEM-derived PNG.
 - OpenOrienteering Contour Trace, Laserscan tool, Mapper (CoVe) — openorienteering.org/apps.
+
+---
+
+## 9. Reveal and confirm (package E)
+
+Decision D3 of the widening plan, implemented here. It is not a map question, but it
+touches every terrain drill and this is where the drills' shape is written down.
+
+**The rule.** A single-attempt round is answered, then looked at, then confirmed. The
+session reducer splits what used to be one event: `answered` records the score and the
+time, `continue` advances the round, the staircase and the streak. Between the two the
+session sits on a round whose score it already knows — which is exactly what a reveal is.
+
+**What it costs the measurement: nothing.** Response time is still `answered.at −
+shown.at`, and the next round's clock starts at `continue`, so the reveal is outside every
+number Progress draws. A session that studies each answer for twenty seconds has the same
+median as one that does not, and `session.test.ts` asserts the two medians against each
+other rather than asserting the arithmetic again. The drills also lost their 700 ms
+marking pause, which sat *inside* the measured round to do what the reveal does outside
+it — so the numbers this app exists to show get slightly faster rather than slower, and
+they get faster for a reason that is written down here.
+
+**What it costs purity: nothing.** `generate`, `wellFormed` and `score` are untouched.
+`PlayProps` gains a phase and the answers the drill reported; the marks are drawn from the
+round's own structure — the shared kind, the correct index — and from what was reported,
+never from what was rendered. `DrillMeta.review` is opt-in, so a drill that marks its own
+taps (Match Madness, Pexeso) keeps its behaviour to the event.
+
+**Multiplayer is the exception, and it is a deliberate one.** A match cannot wait for a
+tap: two players, two screens, and neither of them owns the round. The host times the
+reveal (`REVEAL_MS`, one constant) and moves both peers on with the `next` message it has
+always sent — no protocol change, no new field, `PROTOCOL_VERSION` where it was. The
+joiner's reveal is that window plus one hop, which is the latency it already pays for
+every outcome it is told about.
+
+**What a new single-attempt drill has to do** (package F's discrepancy drill, next): set
+`review: true`, report on the attempt rather than after a pause of its own, and in
+`phase: 'review'` draw its answer with `Verdict` beside whatever emphasis suits its
+geometry — a ring, a border — and take no more input. Nothing else; `DrillPage` owns the
+Continue, the focus and the keys.

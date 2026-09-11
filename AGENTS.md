@@ -430,6 +430,44 @@ Where a round's ground comes from — `src/lib/maps/policy.ts`, the settings scr
   device were written by a build that recorded none, and inventing `generated` for them
   would be a stored record claiming something it never said.
 
+## Review
+
+The reveal after a single-attempt round — `src/lib/session.ts`, `DrillMeta.review`, the
+Continue button in `DrillPage`, and the host-timed pause in `MatchPage`.
+
+- **`answered` does not advance; `continue` does.** The round counter, the level, the
+  streak and the seed are all functions of `index`, and `index` moves on `continue`. So a
+  reveal is the round still in play with its answer drawn on it, and the header cannot
+  say the next round has started while the last one is on screen.
+- **The response time is the tap.** `answered.at − shown.at` is unchanged, and the next
+  round's clock starts at `continue` — a player who studies the answer for twenty seconds
+  has not got slower, and a test asserts that median against one who taps straight on. The
+  700 ms marking pause the drills used to hold before reporting is gone with it: it was
+  inside the measurement and is now outside it, in a phase that costs nothing.
+- **`review` is opt-in and it is the single-attempt drills that opt in.** Match Madness
+  and Pexeso mark every tap as they go, so `DrillPage` dispatches `continue` in the same
+  handler and their sessions are exactly what they were. A drill that scores several taps
+  a round has already answered the question a reveal would answer.
+- **Same `Play`, same instance.** `DrillPage` keys on the round index and not on the
+  phase: the reveal is the round with `phase: 'review'` and the answers it reported, and
+  a remount would throw away the pick it exists to show. Input is disabled inside `Play`,
+  where the drill's own tap rules are; `DrillPage` owns only the way out.
+- **The reveal is presentational.** `generate`, `wellFormed` and `score` know nothing
+  about it, and the marks are read off the round and the reported answers — the one rule,
+  applied to a tick.
+- **Multiplayer reveals on a timeout, never on a tap.** Neither player owns the round, so
+  a Continue would be one of them holding the other up and one who never taps would end
+  the game. Both screens mark the shared symbol off their own `winner` — the host sets it
+  when it awards, the joiner when `result` arrives — and the host moves everyone on with
+  the `next` it always sent, after one constant (`REVEAL_MS`). No protocol change: the
+  host already timed this pause, it is only longer by a little and now has something on
+  screen.
+- **A stray tap during a reveal changes nothing**, in the reducer and not only in the
+  components: `answered` is refused while a round is waiting to be confirmed, so a second
+  answer cannot overwrite a fast one with a slow one. `continue` is idempotent for the
+  matching reason — Enter on a focused button can arrive by two paths and must not skip a
+  round.
+
 ## Verify
 
 ```bash
