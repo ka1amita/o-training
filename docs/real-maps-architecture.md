@@ -1178,3 +1178,182 @@ One rule F has to keep, and the reason the adjusted base is the *base*: the edit
 map every option is cut from, and `siblings` then puts its one edit on top. Adjusting each
 option separately would make the answer differ from the distractors by the adjustment as
 well as by the distraction — a second right answer wearing a first one's clothes.
+
+## Package B: what a circle may be hung on, and where
+
+The answer space and the siting geometry of Mapová dohledávka, which §7's step 6 left as
+the eleven-code table the drill was written with. Package A gave `Semantics.controlSite` to
+every symbol the IOF control descriptions name and said explicitly that *which part* of a
+symbol the circle goes on belongs to the drill; this is that part.
+
+### A word per thing a circle can tell apart
+
+`ANSWERS` is now `WORDS`: code → the word a description sheet would use, covering all 98
+`controlSite` codes, with the **family** word for the ones it does not name — which is what
+a description sheet does with the standard's own "prominent" and "special" features too.
+
+Several codes share a word deliberately, and that is the load-bearing part rather than a
+convenience. The old table protected itself with `BLOCKING`, a list of two symbols that
+were drawn like an answer and could never be one; the moment the vocabulary opened up, that
+list would have had to hold every pair of look-alikes on the map. Sharing a word removes
+the whole class instead: a ride and a footpath are one *path*, three densities of green one
+*thicket*, 201 and 202 one *cliff*, 417/418/419 one *tree* because `isom.ts` draws all
+three as a green ring. A look-alike cannot be a second answer if it is not a second word.
+`BLOCKING` is down to one code — 520, out of bounds, an olive wash that classifies out of
+the ink as green and is a rule printed over the map rather than a thing on it.
+
+### The geometry is the description sheet's
+
+| what | where a circle goes |
+|------|---------------------|
+| point | the feature, at the reach `styleFor` draws it with |
+| line | bends, junctions (an end of one line on another within 8 m), crossings, and loose ends inside the drawing |
+| area | the corners of the outline and the middle of a short side — **never the interior** |
+| relief | the top of a round form; three places along the axis of a long one |
+
+Two of those replaced something that was wrong rather than merely narrow. An **area** used
+to be hung at `positionOf`, its centre: the middle of a meadow, which marks nothing a
+description sheet has a word for, and it was the *only* place an area offered. And a
+**corner** is measured over twenty metres of outline rather than from vertex to vertex,
+because a generated area is drawn as twenty-eight points round an ellipse and every one of
+them turns by a fourteenth of a full circle — at `MIN_BEND` every vertex of a perfectly
+smooth curve was a corner.
+
+A **long form is read along its length**. A hill has one top and a hollow one bottom, but a
+spur is a hundred metres of ground a description sheet says spur about, and offering only
+its middle made a whole form depend on whether one road passed within a ring of one point.
+On the forest sample at level 10 that was the difference between nine usable forms and
+none.
+
+### The ring rule, and the two exemptions that pay for the widening
+
+Uniqueness is now by **word**, and — this is the half that was missing — *everything*
+nameable shadows, whether or not it offers a site. A straight path through a ring has no
+bend to hang a circle on and is still a black line across the middle of it; under the old
+rule a line with no bend was invisible to the ring test, so a boulder sitting on a path was
+a site.
+
+With that fixed and the vocabulary at 98 codes, the flat rule made the cards **thinner**
+than before: measured on the forest sample at level 5, the commonest reasons a candidate
+failed were `thicket <- open, path, vegetationBoundary` (630 of them), `path <- thicket`
+(360) and `paved <- building, road, vegetationBoundary` (228). On a surveyed map every
+circle has a vegetation edge through it. Two exemptions, each a claim about what a player
+reads rather than a loosening:
+
+- **A form of the ground does not shadow the symbol that names it.** `placePoints` puts
+  knolls on `ground.maxima` and a surveyor draws one on a rise for the same reason a real
+  knoll is there. Asked of `Semantics.reliefBound`, which is exactly the claim: a boulder
+  is not relief-bound, and a boulder on a hilltop is still two things in one ring. Worth,
+  over 80 generated windows at level 10: **126 knoll sites where there were 62, 121 pits
+  where there were 79**, and a tenth more sites overall.
+- **Ground cover shadows nothing but ground cover.** The file always said this of the
+  greens — "half the control circles on a real map have some" — and it is now said of
+  every wash and of its edge as well as its middle. 415 and 416 count as cover whatever
+  they are drawn as, because a distinct vegetation boundary is a cover area's edge drawn a
+  second time; treating the line as an object and the area's own outline as cover would
+  make one edge shadow as two different things.
+
+### Measured
+
+20 seeds a level, before at tip `2736737` and after, counting both cards of a round.
+
+**Forest sample** (554 m of Mapper's own ISOM 2017-2 example, one bundle):
+
+| | level 1 | level 5 | level 10 |
+|---|---|---|---|
+| controls a round | 6.0 → **6.0** | 7.0 → **8.0** | 6.4 → **9.6** |
+| distinct words a round | 5.0 → **5.0** | 6.0 → **7.0** | 5.4 → **8.6** |
+| relief circles a round | 2.4 → 1.8 | 3.0 → 2.8 | 2.8 → 2.2 |
+| ground the two cards share | 0.46 → **0.21** | 0.42 → **0.26** | 0.69 → **0.48** |
+| sites a window offers | 6.2 → **24.9** | 7.6 → **25.4** | 9.5 → **22.9** |
+| distinct words a window offers | 7 → **10** | 7 → **10** | 7 → **9** |
+
+**Generated ground**, which was already at the cap the level asks for:
+
+| | level 1 | level 5 | level 10 |
+|---|---|---|---|
+| controls a round | 6.0 → 6.0 | 8.0 → 8.0 | 10.0 → 10.0 |
+| relief circles a round | 1.2 → 1.4 | 1.8 → 1.8 | 2.0 → 1.6 |
+| sites a window offers | 10.0 → **15.4** | 11.7 → **17.6** | 13.0 → **20.0** |
+| distinct words a window offers | 14 → 15 | 15 → **16** | 15 → **16** |
+
+**Relief circles fall on the forest sample, and that is the rule getting stricter rather
+than the ground getting poorer.** Of the 170 relief circles the old rule drew over those
+120 rounds, **122 had a road, a gully, a fence or a building inside the ring** — objects
+the eleven-code vocabulary could not see. Their share of the circles drawn falls from about
+43% to about 25%, which is what happens when a card has four times as many other things it
+could be asking about.
+
+Where a circle actually landed, as a share of the controls drawn (20 seeds a level):
+
+| | point | landform | corner | junction | crossing | end | side | bend |
+|---|---|---|---|---|---|---|---|---|
+| forest sample, level 1 | 0.22 | 0.23 | 0.13 | 0.21 | 0.07 | 0.06 | 0.08 | — |
+| forest sample, level 5 | 0.22 | 0.24 | 0.24 | 0.14 | 0.06 | 0.07 | 0.02 | — |
+| forest sample, level 10 | 0.12 | 0.23 | 0.20 | 0.21 | 0.11 | 0.10 | 0.02 | 0.01 |
+| generated, level 1 | 0.49 | 0.22 | 0.12 | — | — | 0.05 | 0.01 | 0.12 |
+| generated, level 5 | 0.46 | 0.22 | 0.11 | — | — | 0.04 | 0.01 | 0.16 |
+| generated, level 10 | 0.48 | 0.15 | 0.17 | — | 0.01 | 0.04 | 0.02 | 0.12 |
+
+A surveyed map is a road network and a mosaic of vegetation, so two circles in five are a
+junction or an outline corner; a generated one is scattered point features, so half are
+points, and it has no junctions at all because its paths are traced one at a time and do
+not meet. Its `end` circles are **springs** — the one line the generator is allowed to
+begin inland. That difference is the honest shape of the two kinds of ground rather than a
+bug in either, and it is worth knowing before reading a generated card as a rehearsal for
+a real one.
+
+### The circle stays 3 mm, and the forest sample is what now decides it
+
+Median distinct words on a level 10 card — 360 m of ground, where five controls need nine
+words between the two cards:
+
+| circle | generated, a card | generated, two | forest sample, a card | forest sample, two |
+|---|---|---|---|---|
+| 3 mm across | 8.5 | 11 | 7 | 8 |
+| 4 mm | 7 | 9 | 3 | 4 |
+| ISOM's own 6 mm | 3 | 5 | 1 | 2 |
+
+On generated ground 4 mm would now just about do; on a real window it is two circles where
+the level asks for five. The measurement in `sitesOf` used to say seven, four and one for
+the same three sizes, from generated maps alone.
+
+### The second card is not the first one shifted
+
+`LibraryProvider.pick` draws a window uniformly and remembers nothing, so with one bundle
+the two cards landed on the *same* window about one round in eight — 2 to 3 rounds in 20 at
+levels 5 and 10, reported by `wellFormed` and acted on by nothing. `second` redraws, and
+where every window this library has for the size is the one already on screen it asks the
+**generator** for the card instead; the badge then says `mix`, which is true.
+
+It also prefers a window that repeats little: two 360 m cards cut from a 554 m map shared a
+mean 55% of their ground, which is not unfair — the answer is a kind — but is not two cards
+either. The first draw under a quarter wins, otherwise the least repetitive of five,
+because a library of one small map has nowhere far enough to go and refusing every window
+would be refusing the map.
+
+Neither touches a generated round: the generator makes a new map for every pick, so the
+first draw shares no ground and is taken. The drill's golden moved once, in the commit that
+changed which candidates exist.
+
+### The shared word is one a player can see twice
+
+`shareOut`'s `2n - 1` rule is unchanged: with more words to spend it simply runs out less
+often. What the wider vocabulary does risk is a shared word that looks like two different
+things — a path *bend* on one card and a path *crossing* on the other are both a path and
+that is fine, but a family word covers a point on one card and a line on the other and
+would not be pairable. Measured over 180 rounds a source, levels 1/5/10: the shared word
+is a family word **0 times**, on the forest sample and on generated ground alike.
+
+The spread of what *is* shared improves more than its count does. On the forest sample it
+is 7 distinct words before and after, but the two commonest were 61% of the rounds
+(`tree:57 reentrant:53` of 180) and are now 45% (`spur:41 path:40`); on generated ground it
+goes from 11 words to 14. A drill whose answer is a distinctive tree one round in three is
+a drill about distinctive trees.
+
+### What package F can borrow
+
+`wordFor(code)`, `CONTROL_NAMES` and `SiteClass` are the vocabulary for naming a change:
+"a path junction that is not there any more", "a new boulder", "the thicket edge moved".
+`sitesOf` returns `where` and `shape` on every site, so a discrepancy drill can say which
+part of which object it is talking about without a second table.

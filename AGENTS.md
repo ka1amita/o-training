@@ -681,3 +681,72 @@ second and reuses every function here.
 - Measured on the forest sample, 300 m windows, twenty a level: every budget slot spent at
   every level, and distinct point codes in the window **4.55 → 6.55 / 9.10 / 11.30** at
   levels 1 / 5 / 10.
+
+## Control sites
+
+Which part of which symbol a control circle may be hung on — `drills/mapDohledavka/features.ts`.
+Package B of the plan in `docs/real-maps-architecture.md`; everything under **Map
+dohledavka** above still holds except where this says otherwise.
+
+- **The list of symbols is `Semantics.controlSite` and the list of *words* is this file.**
+  `WORDS` maps code to what a description sheet would call it, and a `controlSite` code it
+  does not name falls to its **family** word — which is what a description sheet does with
+  the standard's own "prominent" and "special" features too. A second private list of
+  answerable codes is the bug package A and B exist to remove.
+- **One word per thing a circle can tell apart, not one per symbol**, and that is what makes
+  a 98-code vocabulary safe rather than dangerous. A ride and a footpath are one *path*,
+  three densities of green one *thicket*, 201 and 202 one *cliff*, 417/418/419 one *tree*
+  because `isom.ts` draws all three as a green ring. The old table needed `BLOCKING` — a
+  list of symbols drawn like an answer that could never be one — and with the space open
+  that list would have had to hold every pair of look-alikes on the map. A look-alike
+  cannot be a second answer if it is not a second word. `BLOCKING` is one code now: 520 out
+  of bounds, a rule printed over a map rather than a thing on the ground.
+- **An area is circled at its outline and never in the middle of itself.** It used to be
+  hung at `positionOf` — a meadow's centre, which marks nothing a description sheet has a
+  word for, and which was the only place an area offered. Corners and the middles of short
+  sides now, and a corner is measured over **twenty metres of outline** rather than vertex
+  to vertex: a generated area is twenty-eight points round an ellipse, each turning a
+  fourteenth of a full circle, so at `MIN_BEND` every vertex of a smooth curve was a corner.
+- **A line offers junctions, crossings and loose ends as well as bends.** An end is a site
+  only inside the drawing — never on the map border or on the paper a square map is padded
+  with, where half the circle is off the map and the "end" is the surveyor's sheet. A
+  crossing is counted once per pair of lines, which changes nothing: two lines with
+  different words put both in the ring and make no site either way.
+- **A long form is read along its length.** A hill has one top and a hollow one bottom, but
+  a spur is a hundred metres of ground a description sheet says spur about. Offering only
+  its middle made a whole form depend on one road passing within a ring of one point: on
+  the forest sample at level 10 that was nine usable forms against none.
+- **Everything nameable shadows, site or not.** A straight path through a ring has no bend
+  to circle and is still a black line across the middle of it. The old rule built its
+  shadow list out of the sites it had found, so a line with no bend was invisible to the
+  ring test and a boulder sitting on a path was a site.
+- **A form of the ground does not shadow the symbol that names it.** A knoll on a hill says
+  knoll. Asked of `Semantics.reliefBound`, which is exactly the claim — a boulder is *not*
+  relief-bound and a boulder on a hilltop is still two things in one ring. Worth 126 knoll
+  sites where there were 62, and 121 pits where there were 79, over 80 generated windows at
+  level 10.
+- **Ground cover shadows nothing but ground cover.** The greens were always read this way
+  — "half the control circles on a real map have some" — and it now holds for every wash
+  and for its edge as well as its middle. Without it the wider vocabulary made the cards
+  *thinner*: on a surveyed map every circle has a vegetation edge through it, and at level 5
+  the commonest failures were `thicket <- open, path, vegetationBoundary` and
+  `path <- thicket`. 415 and 416 are cover whatever they are drawn as, because a distinct
+  vegetation boundary is a cover area's edge drawn a second time.
+- **Relief circles falling is the rule getting stricter.** On the forest sample they go from
+  2.4/3.0/2.8 a round to 1.8/2.8/2.2 at levels 1/5/10 — and **122 of the old rule's 170
+  relief circles had a road, a gully, a fence or a building inside the ring**, which the
+  eleven-code vocabulary could not see. Everything else rises: controls a round
+  6.0/7.0/6.4 → 6.0/8.0/9.6, sites a window 6.2/7.6/9.5 → 24.9/25.4/22.9.
+- **The circle is still 3 mm and the surveyed map is what now decides it.** On a level 10
+  card, 3 mm leaves a median of 8.5 words a card on generated ground and 7 on a real
+  window; 4 mm leaves 7 and **3**; ISOM's own 6 mm leaves 3 and 1. Five controls need nine
+  words between two cards.
+- **Two cards are never one window, and try not to be one hillside.** `LibraryProvider.pick`
+  remembers nothing, so on a one-bundle library both cards landed on the same window about
+  one round in eight — `wellFormed` said so and nothing acted on it. `second` redraws, and
+  asks the **generator** for the card when every window this library has for the size is
+  the one already on screen (the badge then says `mix`, which is true). It also prefers a
+  window that repeats at most a quarter of the first card: two 360 m cards cut from a 554 m
+  map shared a mean 55% of their ground, and the same boulder drawn twice can be matched by
+  where it is rather than by what it is. Neither touches a generated round — the generator
+  makes a new map for every pick — so no golden moved for either.
