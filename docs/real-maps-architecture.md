@@ -788,6 +788,78 @@ node scripts/import-map.mjs map.xmap --image map.png --world map.pgw --name koko
   so. The alternative — a table of names and scales restated in the app — is a second
   place for a map's facts to live and to drift.
 
+### Package A — the canon is ISOM 2017-2, and §2.1 above is out of date
+
+*Appended after the six steps shipped. Everything above this heading is the note as it was
+written; this section says where §2.1 and the table under it no longer describe the code.*
+
+§2.1 said the generator's kinds become code aliases and listed them —
+`boulder → '206'`, `knoll → '112'`, `pit → '116'`, `crag → '203'`, `tree → '418'`,
+`marsh → '311'`, `stream → '306'`, `rock → '212'`. Those were **ISOM 2000** numbers, and
+`semantics.ts` said so while `isom.ts` cited 2017-2 beside the same rows and this note
+claimed 2017-2 throughout. One numbering had to win. **ISOM 2017-2 wins**, and the eight
+codes above are now `204`, `109`, `112`, `202`, `417`, `310`, `305`, `214`; the contours,
+the vegetation scale, `505`, `508` and `516` are unchanged — the last two because 2017-2
+already means by them what the generator meant, which is the strongest single argument for
+this choice and was visible in the old note as an apology for them.
+
+- **`SEMANTICS` is the standard's symbol list**, checked against OpenOrienteering
+  Mapper's own `ISOM 2017-2` symbol set: relief `101`–`115`, rock `201`–`215`, water
+  `301`–`313`, vegetation `401`–`419`, man-made `501`–`532`, three overprint rows, and
+  `controlSite` on every symbol a control description can name. §2.1's "about 60 matter"
+  was the right order of magnitude; the table now has a hundred rows and the ~190 in
+  Mapper's set are what the colour fallback still exists for.
+- **`Semantics` gained `barrierStrict`** — a barrier that *binds*. Forest-O's impassable
+  cliff is a statement about the ground and sprint-O's impassable wall is a rule, and no
+  drawing distinguishes them, so the symbol says which kind of barrier it is and
+  `MapMeta.mapType` (`'forest' | 'sprint'`, default forest) says which rules apply. Two
+  fields, no reader yet: `barrier` stays the route-cost hint §2.1 defined.
+- **`MapMeta` also records `symbolSet`**, which is what the source's own codes were before
+  the aliases moved them. The features carry canon and nothing else.
+- **A code may have two pictures.** §2.1 gives `Semantics.geometry` one value and that is
+  still right — it is the standard's geometry for the symbol — but `202` is a cliff, which
+  a surveyor draws as a line and the generator stands at a point. `styleFor` takes the
+  geometry the *feature* has and the style table may hold one entry per geometry. It is
+  load-bearing rather than tidy: `MapView` renders nothing at all for a style whose
+  geometry disagrees with the feature's, so the surveyed cliffs would have disappeared the
+  day the generator took the code, silently and only on real maps.
+- **`ALIASES` is three layers, not one**: `ISOM2000`, `ISOM2017` (identity plus the
+  variant sub-codes folded onto their parent) and `ISSPROM2019`. Built from Mapper's own
+  cross-reference tables (`symbol sets/*.crt`) read backwards, which is also the citation
+  for every number in `SEMANTICS`. The sprint layer carries meanings and not only numbers:
+  `410` is impassable vegetation under ISSprOM and fight vegetation under ISOM, so it
+  lands on `411` and inherits `barrierStrict`; a paved corridor with a footprint lands on
+  the road or path its width means; and the two ISSprOM symbols 2017-2 has no number for —
+  `501.3` a paved area with scattered trees, `513.2` a passable retained wall — keep the
+  sprint number and get a row of their own. A property test asserts every alias lands on a
+  row that exists.
+- **The symbol set is detected at import**, from `<symbols id=…>` first (Mapper writes its
+  own into every file it draws) and then by probing symbol codes and names, with
+  `--symbol-set` and `--map-type` to overrule it. It **refuses to guess**: two standards
+  share almost every number, so an unrecognised set aliases nothing and its codes pass
+  through, which is what §4.1's step 2 always did.
+- **The forest sample was re-imported once**, filename unchanged. 538 of 538 features
+  resolve on 36 codes, before and after — the aliases were never the difference between a
+  known symbol and an unknown one, they are the difference between a boulder and a
+  gigantic boulder. Its window lists are identical. Its barrier count moves 60 → 68,
+  because ISOM 2000's *settlement* is 2017-2's *area that shall not be entered*.
+
+Three goldens moved, once, in the commit that renumbered, and the table below is amended.
+That they moved for the code strings and for nothing else is measured rather than
+asserted: hashing the same projection with every `code` field stripped gives `049b8e41`
+(terrain), `dde89444` (map memory) and `b756b321` (pexeso) on both sides of that commit.
+
+| Golden | Was | Is | Why it moved |
+|---|---|---|---|
+| `terrain.test.ts` | `b6b1aff3` | `a1744b3b` | every feature carries a 2017-2 code string |
+| `contours/drill.test.ts` — contours | `9818605d` | `9818605d` | a contours map has no features to carry one |
+| `contours/drill.test.ts` — map memory | `9847a464` | `0ca4bf2c` | the maps, and a `swap` distractor's new code |
+| `pexeso/drill.test.ts` | `3569fca9` | `9d86aef6` | the maps behind the cards |
+| `mapDohledavka/drill.test.ts` | `4a0dbebe` | `4a0dbebe` | it hashes answer words, not codes |
+| `raster-tier.test.ts` — the generated markup | `0d1e89f8` / `a6b2e317` / `b10ee025` | unchanged | the same pictures; only the keys they are looked up by moved |
+| `raster-tier.test.ts` — the imported markup | `77a61b90` | `9fda80bd` | the bundle was re-imported onto the canon |
+
+
 ---
 
 ## 8. Risks and what bounds them

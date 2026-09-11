@@ -192,16 +192,13 @@ instantly without being able to name.
   entire app. Bundles are fetched on demand and cached in IndexedDB under `map:`, beside
   `drill:` and never instead of it — `clearAll` still deletes only progress, because
   "clear my progress" does not mean "re-download a map in a forest".
-- **`SEMANTICS` is ISOM 2000 numbering**, which is what the generator's codes already
-  were. Two of them are not: **508** is a narrow ride here and a less distinct small path
-  in the standard, **516** a fence here and a power line there. They cannot move — every
-  golden is over generated features carrying them — so `maps/import/codes.ts` aliases the
-  *imported* codes out of the way instead. That table applies only to a symbol set checked
-  symbol by symbol (`ISOM2000`); anything else passes through unchanged, because a guessed
-  alias turns a power line into a fence and an unaliased code still draws.
+- **`SEMANTICS` is ISOM 2017-2 numbering**, and an imported map's codes are aliased onto
+  it symbol set by symbol set. It read "ISOM 2000" here until package A settled which
+  standard the app speaks — see **Codes are ISOM 2017-2** below for the canon, the alias
+  layers and what `barrierStrict` and `mapType` are for.
 - **An unknown code keeps its colour.** `Feature.colour` carries the class the source
-  inked it in, and `styleFor` falls back to it. ~120 ISOM symbols exist, the table knows
-  92, and a map missing its buildings is not the map the surveyor drew. A *known* code
+  inked it in, and `styleFor` falls back to it. ~190 ISOM symbols exist, the table knows a
+  hundred, and a map missing its buildings is not the map the surveyor drew. A *known* code
   carries no colour: the table owns that, and storing it twice is two places to disagree.
 - **A map is stored square**, padded to its longer side, because `Crop` is square and
   every drill checks its window against `width`. Nothing is framed on the padding: the
@@ -348,7 +345,7 @@ instantly without being able to name.
   on a real map have some.
 - **The answer space is keyed by ISOM code, not by the generator's `kind`.** `ANSWERS` maps
   code to the word a control description would use, and `BLOCKING` names the two that get
-  in the way — so an imported 206 and a generated boulder are one answer, and a code the
+  in the way — so an imported 204 and a generated boulder are one answer, and a code the
   table does not name is not an answer at all, because the player has no word for it either.
 - **A card is a window, and it comes from a `MapProvider`.** `generate` states a
   `WindowRequirement` and is handed a map and a crop, like every other terrain drill; on the
@@ -467,6 +464,53 @@ Continue button in `DrillPage`, and the host-timed pause in `MatchPage`.
   answer cannot overwrite a fast one with a slow one. `continue` is idempotent for the
   matching reason — Enter on a focused button can arrive by two paths and must not skip a
   round.
+
+## Codes are ISOM 2017-2
+
+The canon, and the one place a map's own numbering exists. Package A of the plan in
+`docs/real-maps-architecture.md` (see its appended section for what that supersedes in
+§2.1).
+
+- **`SEMANTICS` is ISOM 2017-2 and nothing else is.** It was ISOM 2000 with two numbers
+  borrowed, documented as 2017-2 in the design note and in `isom.ts` and as 2000 in
+  `semantics.ts` — a *version* confusion, not a sprint-versus-forest one. The tell that
+  2017-2 is the right canon is the pair the old note apologised for: **508** is a narrow
+  ride and **516** a fence in the current standard, which is exactly what the generator
+  always meant by them, so the thing to move was everything else. Checked against
+  OpenOrienteering Mapper's own `ISOM 2017-2` symbol set, which is where every number in
+  the table comes from.
+- **An import aliases onto the canon; nothing downstream ever sees a source's numbers.**
+  `maps/import/codes.ts` holds three layers — `ISOM2000`, `ISOM2017`, `ISSPROM2019` —
+  built from Mapper's own cross-reference tables (`symbol sets/*.crt`) read backwards,
+  with the variant sub-codes folded onto the symbol they are a variant of. **An alias must
+  land on a row the table has**, and a property test says so: an unresolved code after
+  aliasing is worse than an unaliased one, because it threw the source's own answer away.
+- **The sprint layer carries meanings, not only numbers.** ISSprOM's `410` is impassable
+  vegetation where ISOM's is fight, so it lands on `411`; its hedge lands on `410.4`; its
+  paved corridors land on the road or path their footprint means. Two ISSprOM symbols have
+  no 2017-2 number at all (`501.3`, `513.2`) and keep their own — which is allowed only
+  because 2017-2 does not use those numbers for something else.
+- **`barrierStrict` is the rule, `barrier` is the cost.** An impassable wall is a
+  disqualification under sprint rules and merely expensive in a forest, and no drawing
+  says which — so the symbol carries `barrierStrict` and `MapMeta.mapType`
+  (`'forest' | 'sprint'`, absent means forest) says which rules are in force. Neither
+  affects control sites: a control at the foot of an impassable cliff is ordinary.
+- **The symbol set is detected and the detector declines.** `<symbols id=…>` first, then
+  probes over symbol codes and names; two standards share almost every number, so one
+  coincidental match is not evidence and an unrecognised set aliases nothing.
+  `--symbol-set` and `--map-type` overrule it, and `MapBundle.meta` records what was used.
+- **One code, two pictures.** A cliff is `202` whether a surveyor drew it as a line or the
+  generator stood one at a point, so `SYMBOL` may hold an entry per geometry and
+  `styleFor` is asked for the geometry the **feature** has. This is not tidiness:
+  `MapView` draws *nothing* for a style whose geometry disagrees with the feature's, so a
+  table row that answers with the wrong geometry is an invisible symbol on real maps only.
+  A test walks every feature in the bundle and asserts it gets a style it can be drawn
+  with; `swapsFor` reads the feature's geometry for the same reason.
+- **Renumbering moved sixteen strings and no decision**, and that is measurable rather
+  than assertable: `goldenMap`'s projection hashed with every `code` field stripped is
+  unchanged across the commit that did it. Any future re-pin should be able to say the
+  same thing.
+
 
 ## Verify
 
