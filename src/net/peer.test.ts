@@ -156,6 +156,27 @@ describe('peer / which maps the match runs on', () => {
     expect(host.seed).toBe(g.host.seed);
   });
 
+  it('an adjusted id round-trips, and a different intensity is a different library', () => {
+    // The id is opaque to the netcode and has to stay that way: `agreementWith` compares
+    // two strings and knows nothing about sources. What the test is for is that an
+    // `adjusted:` id names the intensity, so two devices on the same maps at different
+    // intensities are two different sets of rounds and are caught — exactly as two
+    // devices on different maps are.
+    const ADJUSTED = `adjusted:0.5:${LIBRARY}`;
+    const same = new Game(3, 1, 5, [ADJUSTED, ADJUSTED]).flush();
+    expect(same.host.providerId).toBe(ADJUSTED);
+    expect(same.joiner.providerId).toBe(ADJUSTED);
+    expect(same.host.mapsDiffer).toBe(false);
+
+    for (const theirs of [`adjusted:1:${LIBRARY}`, LIBRARY, 'generated']) {
+      const g = new Game(3, 1, 5, [ADJUSTED, theirs]).flush();
+      expect(g.host.providerId, theirs).toBe('generated');
+      expect(g.joiner.providerId, theirs).toBe('generated');
+      expect(g.host.mapsDiffer, theirs).toBe(true);
+      expect(g.joiner.mapsDiffer, theirs).toBe(true);
+    }
+  });
+
   it('carries an id and never a map', () => {
     // The privacy stance, as a test: what crosses the wire is a hash and a weight, and a
     // library id is a list of content hashes. No geometry, ever.

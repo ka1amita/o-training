@@ -9,6 +9,10 @@ describe('protocol / decode', () => {
     const messages: Message[] = [
       { t: 'hello', protocol: PROTOCOL_VERSION, seed: 1, level: 2, rounds: 3 },
       { t: 'hello', protocol: PROTOCOL_VERSION, seed: 1, level: 2, rounds: 3, providerId: 'library:a,b' },
+      // An adjusted id is a longer string and nothing else — the wire does not know what
+      // a source is, and the protocol version did not have to move to carry a new one.
+      { t: 'hello', protocol: PROTOCOL_VERSION, seed: 1, level: 2, rounds: 3, providerId: 'adjusted:0.5:library:a,b' },
+      { t: 'maps', providerId: 'adjusted:1:library:a' },
       { t: 'maps', providerId: 'generated' },
       { t: 'tap', round: 2 },
       { t: 'result', round: 2, winner: 'joiner', scores: { host: 1, joiner: 2 } },
