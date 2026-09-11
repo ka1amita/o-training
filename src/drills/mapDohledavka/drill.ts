@@ -1,5 +1,8 @@
 import { defineDrill, type Score } from '@/drills/types.ts';
-import type { RoundContext, WindowRequirement } from '@/lib/maps/provider.ts';
+import {
+  GeneratedProvider,
+  type MapProvider, type RoundContext, type WindowRequirement,
+} from '@/lib/maps/provider.ts';
 import type { Rng } from '@/lib/rng.ts';
 import type { Crop, OMap } from '@/lib/terrain/omap.ts';
 import { byKind, sitesOf, type ControlKind, type Site } from './features.ts';
@@ -118,11 +121,14 @@ export function requirementFor(level: number): WindowRequirement {
       line: scale(2, 3),
       area: scale(3, 6),
     },
-    // Both off, and for the same reason: a site is a ring holding one nameable thing, and
-    // these two fill rings with things that are not answers. A ride is a black line the
-    // player reads as a path (see `BLOCKING`), and a rock field puts a second boulder
-    // inside every circle a boulder could have. With either of them on, a level 10 pair of
-    // cards runs out of sites before it has the five circles the level asks for.
+    // Both off, and still for the same reason, though only one of the two reasons it used
+    // to be: a site is a ring holding one nameable thing. A ride is a *path* now and no
+    // longer a look-alike, but two families of dead-straight lines across a card put a
+    // black line through a great many rings that would otherwise hold one thing; and a
+    // cluster is boulders, crags, knolls and pits in one patch (`CLUSTER_KINDS`), which is
+    // four words inside every circle any of them could have. With either of them on, a
+    // level 10 pair of cards runs out of sites before it has the five circles the level
+    // asks for.
     rides: 0,
     clusters: 0,
   };
@@ -134,12 +140,57 @@ interface Draft {
   readonly sites: Map<ControlKind, Site[]>;
 }
 
-function draft(rng: Rng, ctx: RoundContext, requirement: WindowRequirement, radius: number): Draft | null {
-  const picked = ctx.maps.pick(rng, requirement);
+function draft(
+  rng: Rng,
+  maps: MapProvider,
+  requirement: WindowRequirement,
+  radius: number,
+): Draft | null {
+  const picked = maps.pick(rng, requirement);
   // Only a provider that can decline returns null, and one that declines everything is a
   // misconfiguration rather than a round to muddle through.
   if (!picked) return null;
   return { map: picked.map, crop: picked.crop, sites: byKind(sitesOf(picked.map, picked.crop, radius)) };
+}
+
+const sameGround = (a: Draft, b: Draft): boolean =>
+  a.map === b.map && a.crop.x === b.crop.x && a.crop.y === b.crop.y && a.crop.size === b.crop.size;
+
+/** Redraws of the second card before the generator is asked for one instead. */
+const REDRAWS = 4;
+
+/**
+ * The generator, for the second card only, when the library cannot supply a second window.
+ *
+ * A `LibraryProvider` picks a window uniformly and has no memory of the one it just gave
+ * out, so two cards off a one-bundle library landed on the same window about one round in
+ * eight — and the same window is the one thing two cards may never be, since every kind on
+ * one is then a kind on the other. Redrawing fixes it wherever there is a second window to
+ * find; where there is not — one map, one window scored for this size — the honest answer
+ * is ground from somewhere else rather than a round with no question in it. The badge says
+ * `mix` when that happens, because it is true.
+ */
+const ELSEWHERE: MapProvider = new GeneratedProvider();
+
+/**
+ * A second card, on ground the first is not already showing.
+ *
+ * Deterministic, like everything else here: the redraws come out of the same rng stream in
+ * a fixed order, so the round is still a function of `(seed, level, provider.id)`.
+ */
+function second(
+  rng: Rng,
+  maps: MapProvider,
+  requirement: WindowRequirement,
+  radius: number,
+  first: Draft,
+): Draft | null {
+  for (let tries = 0; tries <= REDRAWS; tries++) {
+    const drawn = draft(rng, maps, requirement, radius);
+    if (!drawn) return null;
+    if (!sameGround(first, drawn)) return drawn;
+  }
+  return draft(rng, ELSEWHERE, requirement, radius);
 }
 
 interface Handout {
@@ -267,8 +318,8 @@ export const mapDohledavka = defineDrill<MapDobbleRound, MapDobbleAnswer>({
     let lean: MapDobbleRound | null = null;
 
     for (let attempt = 0; attempt < MAPS; attempt++) {
-      const a = draft(rng, ctx, requirement, radius);
-      const b = draft(rng, ctx, requirement, radius);
+      const a = draft(rng, ctx.maps, requirement, radius);
+      const b = a && second(rng, ctx.maps, requirement, radius, a);
       if (!a || !b) throw new Error('map dohledavka: no map with relief for this level');
 
       // Down from what the level asked for: a pair of thin maps costs a circle rather than

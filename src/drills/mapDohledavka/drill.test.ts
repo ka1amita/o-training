@@ -1,14 +1,39 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { GeneratedProvider, type RoundContext } from '@/lib/maps/provider.ts';
-import { hashJson, seeded } from '@/lib/rng.ts';
-import type { Feature, OMap, Vec } from '@/lib/terrain/omap.ts';
+import { GeneratedProvider, type MapProvider, type RoundContext } from '@/lib/maps/provider.ts';
+import { hashJson, seeded, type Rng } from '@/lib/rng.ts';
+import type { Crop, Feature, OMap, Vec } from '@/lib/terrain/omap.ts';
 import { semanticsOf } from '@/lib/terrain/semantics.ts';
 import {
-  mapDohledavka as drill, paramsFor, CIRCLE_FRACTION,
+  mapDohledavka as drill, paramsFor, requirementFor, CIRCLE_FRACTION,
   type Control, type MapDobbleRound,
 } from './drill.ts';
 import { clearanceFrom, wordFor, type ControlKind } from './features.ts';
+
+/**
+ * A library of `windows` windows cut from one piece of ground, and nothing else.
+ *
+ * The shape the real `LibraryProvider` has when a device holds one small bundle: it draws
+ * uniformly, it has no memory, and at one window it can only ever answer with the same
+ * ground. Standing in for it here keeps the test about the drill rather than about which
+ * windows a particular bundle happens to carry.
+ */
+class Shelf implements MapProvider {
+  readonly id: string;
+
+  constructor(
+    private readonly ground: { map: OMap; crop: Crop },
+    private readonly windows: number,
+  ) {
+    this.id = `shelf:${windows}`;
+  }
+
+  pick(rng: Rng): { map: OMap; crop: Crop } {
+    const { map, crop } = this.ground;
+    const step = rng.int(this.windows);
+    return { map, crop: { ...crop, x: crop.x + step * 0.5, y: crop.y + step * 0.5 } };
+  }
+}
 
 const anySeed = fc.integer({ min: 0, max: 0xffffffff });
 const anyLevel = fc.integer({ min: drill.bounds.min, max: drill.bounds.max });
@@ -167,6 +192,33 @@ describe('map dohledavka / generate', () => {
       }),
       { numRuns: 40 },
     );
+  });
+
+  it('never shows one window twice, however small the library', () => {
+    // A `LibraryProvider` picks a window uniformly and has no memory of the last one it
+    // gave out, so two cards off a one-bundle library landed on the same window about one
+    // round in eight. The same *window* is the one thing two cards may never be: every
+    // kind on one is then a kind on the other, and the round has no question in it.
+    const ground = new GeneratedProvider().pick(seeded(7), requirementFor(5));
+
+    for (let seed = 0; seed < 30; seed++) {
+      for (const level of [1, 5, 10]) {
+        for (const windows of [1, 2, 3]) {
+          const round = drill.generate(seeded(seed), level, { maps: new Shelf(ground, windows) });
+          expect(drill.wellFormed(round)).toEqual([]);
+          const [a, b] = round.cards;
+          expect(a.map === b.map && a.crop.x === b.crop.x && a.crop.y === b.crop.y).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('is still a function of the seed when it has to look twice', () => {
+    const shelf = () => ({ maps: new Shelf(new GeneratedProvider().pick(seeded(7), requirementFor(5)), 1) });
+    for (const level of [1, 5, 10]) {
+      expect(drill.generate(seeded(11), level, shelf()))
+        .toEqual(drill.generate(seeded(11), level, shelf()));
+    }
   });
 
   it('gives every level the controls it asks for', () => {
