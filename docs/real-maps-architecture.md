@@ -2,8 +2,12 @@
 
 A design note, now implemented: **every step of section 7 is done** — the engine
 refactor, the offline import pipeline, the raster tier, and the policy that switches
-between sources. The per-step notes at the end of section 7 record where the code departs
-from the text below and why. It describes how the terrain engine would
+between sources — and **six packages have been appended since**, A through F, each with a
+section of its own after section 9. The per-step notes at the end of section 7 record where
+the code departs from the text below and why, and the appended sections do the same for
+what came after: where one of them supersedes something above — package A supersedes the
+codes in §2.1, package D adds a fourth source to §5.1, package B replaces the answer space
+of §5.3's fourth row — its own section says so. It describes how the terrain engine would
 change so a drill can run on a real map — an OpenOrienteering Mapper `.xmap`, an OCAD
 `.ocd`, or a plain image exported from Livelox — as well as on the generated one, and
 switch between them per drill, per round, or per member tier without the drills noticing.
@@ -442,7 +446,8 @@ interface Drill<Round, Answer> extends DrillMeta {
   100 % real. Deterministic given the rng.
 
 `RunningSession` builds the provider from a `MapPolicy` stored with progress
-(`{ source: 'generated' | 'real' | 'mixed', library: string[] }`) and passes it in. The
+(`{ source: 'generated' | 'real' | 'mixed', library: string[] }`, and since package D a
+fourth source, `adjusted`, with the `intensity` beside `realShare`) and passes it in. The
 drills do not know which one they got; `Home` and a settings screen decide.
 
 ### 5.2 Determinism and P2P
@@ -1147,7 +1152,7 @@ already draws those blobs and they still take up room), and the renderer draws t
 through the same style table a vector one goes through. The pixels are untouched — §3's cut
 and paste is what a *move* on a picture is; an add leaves no patch.
 
-### Measured
+### Measured: what enrichment puts back
 
 Twenty 300 m windows of the forest sample, per level, every budget slot spent:
 
@@ -1253,7 +1258,7 @@ reads rather than a loosening:
   second time; treating the line as an object and the area's own outline as cover would
   make one edge shadow as two different things.
 
-### Measured
+### Measured: what the wider vocabulary is worth
 
 20 seeds a level, before at tip `2736737` and after, counting both cards of a round.
 
@@ -1334,7 +1339,8 @@ would be refusing the map.
 
 Neither touches a generated round: the generator makes a new map for every pick, so the
 first draw shares no ground and is taken. The drill's golden moved once, in the commit that
-changed which candidates exist.
+changed which candidates exist: `4a0dbebe` → `26eb6a53`, which amends that one row of both
+tables in section 7 — it hashes answer words, and this package is what a word is.
 
 ### The shared word is one a player can see twice
 

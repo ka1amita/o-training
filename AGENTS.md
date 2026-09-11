@@ -98,7 +98,7 @@ stale state and the round could not finish.
   card in it.
 - Point separation is **per pair** (`separationOf`), not one constant: a crag is a line
   twice as long as a boulder is wide, and a field of them at the boulder spacing smears
-  into one black mass. It is asked of the **code**, so an imported 203 takes the same room
+  into one black mass. It is asked of the **code**, so an imported 202 takes the same room
   a generated crag does. `MIN_POINT_SEPARATION` is the advertised floor and is tested
   against every pair of kinds.
 - `MapView` culls to the window — 381 elements to 228 on a 12-card board.
@@ -336,17 +336,23 @@ instantly without being able to name.
 - **One nameable thing to a ring.** This is Dobble's no-overlap rule in map form: a circle
   with a boulder at its centre and a knoll inside the ring can be read either way, and if
   the other card circles a knoll the round has two answers. It is also what sizes the
-  circle: at ISOM's own 6 mm — 90 m of ground — a card offers a median of **one** usable
-  kind, at 4 mm four, and at the 3 mm drawn here seven. Nine at five controls is why
-  `generate` draws up to ten pairs of maps: only two pairs in three can supply them.
-- **A ride and rough open block a site without ever being answers.** A ride is a black
-  line like a path; 403 is the yellow of a clearing at half the screen. The greens are not
-  in that list: nothing in the vocabulary is a wash of green, and half the control circles
+  circle: at ISOM's own 6 mm — 90 m of ground — a card offers a median of **three** usable
+  kinds, at 4 mm seven, and at the 3 mm drawn here 8.5. (Those are the numbers on generated
+  ground; **Control sites** below re-measures all three on a surveyed window, which is what
+  now decides the size.) Nine at five controls is why `generate` draws up to ten pairs of
+  maps: only two pairs in three can supply them.
+- **A ride and rough open used to block a site without ever being answers**, because a
+  ride is a black line like a path and 403 is the yellow of a clearing at half the screen.
+  Both are answers now, under the words *path* and *open land*: **Control sites** below
+  replaces that list with one word per thing a circle can tell apart, and a look-alike
+  cannot be a second answer if it is not a second word. The greens are answers too, and
+  are read as ground cover rather than as things standing on it — half the control circles
   on a real map have some.
-- **The answer space is keyed by ISOM code, not by the generator's `kind`.** `ANSWERS` maps
-  code to the word a control description would use, and `BLOCKING` names the two that get
-  in the way — so an imported 204 and a generated boulder are one answer, and a code the
-  table does not name is not an answer at all, because the player has no word for it either.
+- **The answer space is keyed by ISOM code, not by the generator's `kind`.** `WORDS` maps
+  code to the word a control description would use, and `BLOCKING` names the one symbol
+  that gets in the way without being one — so an imported 204 and a generated boulder are
+  one answer, and a code the table does not name is not an answer at all, because the
+  player has no word for it either.
 - **A card is a window, and it comes from a `MapProvider`.** `generate` states a
   `WindowRequirement` and is handed a map and a crop, like every other terrain drill; on the
   generator the crop is the whole map, which is exactly the card this drill always drew.
@@ -354,10 +360,12 @@ instantly without being able to name.
   centred inside the window can contain — because a surveyed map is two kilometres of forest
   where a card is three hundred metres of it.
 - **Landforms are read off `analysis.landforms`**, like everything else that asks a map
-  where its ground is shaped. A candidate carries `kind` only when the source knew it: the
-  generator was *built* from named landforms, curvature was not. So on a surveyed map this
-  drill offers no relief answers and makes thinner cards through the `wanted--` ladder,
-  rather than circling a bend in the ground and calling it a spur.
+  where its ground is shaped. A candidate carries `kind` only where something could name
+  it: the generator was *built* from named landforms, and a curvature candidate is named
+  by the classifier in **Surveyed landforms** below or not at all — 19 of the forest
+  sample's 54, and 9 of the 11 that pass `standsOut`. What is still refused is the other
+  way out, circling a bend in the ground and calling it a spur: an unnamed candidate is
+  not a site, and a pair of thin cards costs a circle through the `wanted--` ladder.
 - **`placePoints` puts knolls on `ground.maxima`** — which is exactly where a hilltop is.
   Hill and knoll shadow each other constantly, and that is the map being honest rather
   than the rule being harsh.

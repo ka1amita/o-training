@@ -34,9 +34,10 @@ down. It settles where you are right about 79% of the time.
 
 The five map drills run on maps generated on your device. **Settings** (from the bottom of
 the home screen) can switch them to windows onto real, surveyed maps, or to a mix in
-whatever proportion you like; the round header says `gen` or `real` for the ground you were
-given. A real map is downloaded the first time it is used and then kept on the device, so a
-session in the forest needs no signal. The default is generated, and a device that never
+whatever proportion you like; the round header says `gen`, `real` or — for a round drawn
+from both, which a pexeso board can be — `mix`, for the ground you were given. A real map
+is downloaded the first time it is used and then kept on the device, so a session in the
+forest needs no signal. The default is generated, and a device that never
 opens that screen fetches nothing.
 
 **Adjusted real maps** are the fourth setting: the same surveyed ground with plausible
