@@ -14,7 +14,8 @@ import { rasterAnalysis } from './raster.ts';
  * that may.
  */
 import {
-  analyse as analyseDrawing, RUNNABILITY_GRID, type Analysis, type AnalysisOptions,
+  analyse as analyseDrawing, drawnExtent, RUNNABILITY_GRID,
+  type Analysis, type AnalysisOptions, type Box,
 } from '@/lib/terrain/analysis.ts';
 
 export { RUNNABILITY_GRID, type Analysis, type AnalysisOptions };
@@ -65,6 +66,25 @@ const DETAIL_TARGET = 0.1;
 export const WINDOWS_KEPT = 32;
 
 /**
+ * How much of a window may lie outside the ground the surveyor drew.
+ *
+ * A map is stored square, padded to its longer side, and the padding is nothing at all —
+ * not white forest, not out of bounds, just the edge of the paper. A card framed on it has
+ * a blank strip down one side, which is not a hard round, it is a card missing a corner.
+ *
+ * The pipeline used to argue that empty ground scores nothing and so no window would ever
+ * be framed there. It was wrong, and the forest sample says by how much: the top window of
+ * every one of its fifteen requirement lists began at `y: 0` on a map whose drawn ground
+ * starts at y = 68.7 m, up to a quarter of the card being paper. Empty padding costs a
+ * *point* of score, and a window that holds the busiest ground on the map still wins with
+ * that point gone.
+ *
+ * A twentieth, rather than nothing at all: a surveyor's own boundary is ragged, and a
+ * window that clips a metre of it at one corner shows a card nobody would question.
+ */
+const MAX_PADDING = 0.05;
+
+/**
  * A window's score, and the shape of what a requirement is asking for.
  *
  * Deliberately not a single number until the last line: each part is a fact about the
@@ -82,6 +102,8 @@ export interface WindowScore {
   readonly landforms: number;
   /** Fraction of the window covered by something less runnable than white forest. */
   readonly cover: number;
+  /** Fraction of the window outside the ground the surveyor drew. `MAX_PADDING`. */
+  readonly outside: number;
   readonly score: number;
 }
 
@@ -119,17 +141,39 @@ export function bestWindows(
   const size = Math.min(requirement.size, map.width, map.height);
   const stride = Math.max(1, size * WINDOW_STRIDE);
   const grid = map.relief.kind === 'none' ? null : map.relief.sampleGrid(96);
+  const drawn = drawnExtent(map);
 
   const scored: WindowScore[] = [];
-  for (let y = 0; y + size <= map.height + 1e-6; y += stride) {
-    for (let x = 0; x + size <= map.width + 1e-6; x += stride) {
+  for (const y of offsets(drawn.minY, drawn.maxY, size, map.height, stride)) {
+    for (const x of offsets(drawn.minX, drawn.maxX, size, map.width, stride)) {
       const crop: Crop = { x, y, size };
-      const window_ = scoreWindow(map, analysis, requirement, crop, grid);
+      const window_ = scoreWindow(map, analysis, requirement, crop, grid, drawn);
       if (window_.score > 0) scored.push(window_);
     }
   }
   scored.sort((a, b) => b.score - a.score || a.crop.y - b.crop.y || a.crop.x - b.crop.x);
   return scored.slice(0, keep);
+}
+
+/**
+ * Where the candidate windows start along one axis: **at the drawing, not at the origin**.
+ *
+ * A padded map's drawing begins somewhere inside it, and a lattice laid from (0, 0) puts
+ * every candidate at the same offset into the padding — on the forest sample, a stride of
+ * 75 m against a top margin of 68.7 m, so the best window of each list was the one that
+ * cleared the margin by six metres and the rest of the row scored zero without ever having
+ * been the ground the surveyor drew. The last offset is pinned to the far edge of the
+ * drawing for the same reason, or the strip the stride cannot reach is never offered.
+ *
+ * Clamped into the map, because a window is a `Crop` and a crop is inside the map.
+ */
+function offsets(low: number, high: number, size: number, extent: number, stride: number): number[] {
+  const last = Math.min(Math.max(high - size, 0), Math.max(extent - size, 0));
+  const first = Math.min(Math.max(low, 0), last);
+  const out: number[] = [];
+  for (let at = first; at < last - 1e-6; at += stride) out.push(at);
+  out.push(last);
+  return out;
 }
 
 function scoreWindow(
@@ -138,6 +182,7 @@ function scoreWindow(
   requirement: WindowRequirement,
   crop: Crop,
   grid: Grid | null,
+  drawn: Box,
 ): WindowScore {
   let features = 0;
   let controlSites = 0;
@@ -186,27 +231,39 @@ function scoreWindow(
   }
   const cover = counted > 0 ? covered / counted : 0;
   const detail = counted > 0 ? brown / counted : 0;
+  const outside = outsideShare(crop, drawn);
 
   // A window that cannot answer the question at all scores zero and is dropped, rather
   // than scoring badly and being picked when nothing better exists. A contours round on
   // flat ground is not a hard round, it is an unanswerable one.
   let score = 0;
+  // The padding is the first of those floors, and it is about the card rather than about
+  // the question: a strip of bare paper down one edge is a worse round than any of them.
+  //
+  // Asked only of a drawing the card fits inside. A map drawn smaller than the window that
+  // wants it has no framing that avoids the paper, and refusing every window would be
+  // refusing the map — where offering the least bad one is what the rest of the score is
+  // for. That is the hand-written fixtures and, one day, a sprint map under a 300 m card.
+  const fits = drawn.maxX - drawn.minX >= crop.size && drawn.maxY - drawn.minY >= crop.size;
+  if (fits && outside > MAX_PADDING) {
+    return { crop, reliefRange, features, controlSites, landforms, cover, outside, score: 0 };
+  }
   const wantsRelief = requirement.needsRelief || requirement.relief !== undefined;
   // A relief round needs ground it can *move*, not only ground that goes up and down:
   // `proposeEdit` picks a warp from the landform candidates inside the window, and a
   // window with none has nothing to offer it. An even hillside is exactly that case.
   if (wantsRelief && landforms === 0) {
-    return { crop, reliefRange, features, controlSites, landforms, cover, score: 0 };
+    return { crop, reliefRange, features, controlSites, landforms, cover, outside, score: 0 };
   }
   if (wantsRelief && (!grid || reliefRange < (requirement.relief?.minRange ?? 5))) {
-    return { crop, reliefRange, features, controlSites, landforms, cover, score: 0 };
+    return { crop, reliefRange, features, controlSites, landforms, cover, outside, score: 0 };
   }
   if (requirement.minControlSites !== undefined && controlSites < requirement.minControlSites) {
-    return { crop, reliefRange, features, controlSites, landforms, cover, score: 0 };
+    return { crop, reliefRange, features, controlSites, landforms, cover, outside, score: 0 };
   }
   const wantedFeatures = totalWanted(requirement);
   if (wantedFeatures > 0 && features < Math.ceil(wantedFeatures / 2)) {
-    return { crop, reliefRange, features, controlSites, landforms, cover, score: 0 };
+    return { crop, reliefRange, features, controlSites, landforms, cover, outside, score: 0 };
   }
 
   // Past the floors it is a preference, and the parts are weighted by how much each one
@@ -235,7 +292,20 @@ function scoreWindow(
   // every vector map, so no bundle already written moves.
   if (analysis.brown) score += Math.min(1, detail / DETAIL_TARGET);
 
-  return { crop, reliefRange, features, controlSites, landforms, cover, score };
+  return { crop, reliefRange, features, controlSites, landforms, cover, outside, score };
+}
+
+/**
+ * How much of a window is paper rather than map, by area.
+ *
+ * The drawn extent is a box and so is the window, so this is one rectangle overlap — the
+ * surveyor's outline is not a box, but the padding this is here to catch is, and a
+ * per-feature test would be reading the drawing to answer a question about the paper.
+ */
+function outsideShare(crop: Crop, drawn: Box): number {
+  const wide = Math.max(0, Math.min(crop.x + crop.size, drawn.maxX) - Math.max(crop.x, drawn.minX));
+  const tall = Math.max(0, Math.min(crop.y + crop.size, drawn.maxY) - Math.max(crop.y, drawn.minY));
+  return 1 - (wide * tall) / (crop.size * crop.size);
 }
 
 const totalWanted = (requirement: WindowRequirement): number => {

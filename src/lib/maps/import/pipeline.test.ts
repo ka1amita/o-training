@@ -334,6 +334,82 @@ describe('scoreWindows', () => {
     expect(Object.keys(lists)).toEqual([requirementId(requirement)]);
     expect(requirementId(requirement)).toBe('s60');
   });
+
+  it('offers the least bad framing on a drawing smaller than the card', () => {
+    // Everything here is drawn in a 34 m corner of a 200 m square, and the card is 60 m:
+    // no framing of it avoids the paper. Refusing them all would be refusing the map,
+    // which is the one case the padding rule below does not apply to.
+    const windows = bestWindows(map, analyse(map), requirement);
+    expect(windows.length).toBeGreaterThan(0);
+    expect(windows[0]!.outside).toBeGreaterThan(0.05);
+  });
+});
+
+/**
+ * The map's padding, and why a window may not be framed on it.
+ *
+ * A map is stored square and padded to its longer side, so a landscape map carries a band
+ * of blank paper. The pipeline used to argue that empty ground scores nothing and so no
+ * window would be framed there; on the forest sample the top window of all fifteen
+ * requirement lists began at `y: 0`, on a drawing that starts at y = 68.7 m.
+ *
+ * Built here rather than read off `public/maps/forest-sample.json`, because the committed
+ * bundle is an output of this stage: a test that read it could only ever agree with
+ * whatever was last written.
+ */
+describe('scoreWindows / the padding a square map carries', () => {
+  const SIZE = 400;
+  const TOP = 70;
+  // A landscape drawing in a square map: nothing at all above y = 70, which is exactly
+  // what `saveBundle` leaves behind when it pads a 400 x 330 map to its longer side.
+  const padded: OMap = {
+    id: 'padded',
+    width: SIZE,
+    height: SIZE,
+    scale: 10000,
+    relief: new NoRelief(SIZE),
+    features: Array.from({ length: 80 }, (_, i): Feature => ({
+      id: `p${i}`,
+      code: '206',
+      geometry: {
+        kind: 'point',
+        at: { x: 20 + (i % 10) * 40, y: TOP + 10 + Math.floor(i / 10) * 40 },
+      },
+    })),
+  };
+  const requirement: WindowRequirement = { size: 200, needsRelief: false, minFeatures: { point: 4 } };
+  const windows = bestWindows(padded, analyse(padded), requirement);
+  // Where the drawing actually is: the features' own bounds, which is what `drawnExtent`
+  // measures — the first row of points, not the margin they were laid out from.
+  const drawnTop = TOP + 10;
+  const drawnBottom = TOP + 10 + 7 * 40;
+
+  it('frames no window on the paper', () => {
+    expect(windows.length).toBeGreaterThan(0);
+    for (const window_ of windows) {
+      expect(window_.outside).toBeLessThanOrEqual(0.05);
+      expect(window_.crop.y).toBeGreaterThanOrEqual(drawnTop - 1e-6);
+      expect(window_.crop.y + window_.crop.size).toBeLessThanOrEqual(SIZE + 1e-6);
+    }
+  });
+
+  it('lays its candidates out from the drawing and not from the origin', () => {
+    // The first row of candidates is the top of the drawing, so the ground just below the
+    // margin is offered as a window rather than only ever appearing inside one.
+    expect(windows.some((w) => Math.abs(w.crop.y - drawnTop) < 1e-6)).toBe(true);
+    // ...and the last row reaches the far edge of the drawing, which a stride laid from
+    // the origin would step over: 400 is not a whole number of 50 m strides past 80.
+    expect(windows.some((w) => w.crop.y + w.crop.size >= drawnBottom - 1e-6)).toBe(true);
+  });
+
+  it('scores a window that is mostly paper at zero, however much it holds', () => {
+    // Not a preference: the window at the origin holds a third of the map's features and
+    // still scores nothing, because a card with a blank strip down one edge is not a
+    // question about the ground.
+    const analysis = analyse(padded);
+    const all = bestWindows(padded, analysis, requirement, 500);
+    expect(all.every((w) => w.crop.y >= drawnTop - 1e-6)).toBe(true);
+  });
 });
 
 describe('importXmap / end to end on the hand-written map', () => {
