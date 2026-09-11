@@ -45,7 +45,11 @@ export function Card({
   // Widths are millimetres of paper, as everywhere else drawn here; `unit` is a hundredth
   // of the window, exactly as in `MapView`.
   const unit = size / 100;
-  const at = (v: number, origin: number) => `${((v - origin) / size) * 100}%`;
+  // Clamped into the card: a change whose centre is on the card can still have a disc that
+  // runs off it, and a tick three quarters of the way off the edge is a verdict nobody can
+  // read. Being a little off the ring it belongs to beats being outside the picture.
+  const at = (v: number, origin: number) =>
+    `${Math.min(96, Math.max(4, ((v - origin) / size) * 100))}%`;
 
   /**
    * A pointer, as metres of ground.

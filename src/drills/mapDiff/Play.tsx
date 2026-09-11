@@ -51,8 +51,16 @@ export default function Play({
   );
   const left = round.targets.length - taps.length;
 
+  // Two cards or one. They are the **same size** whenever both are up: a change is found by
+  // comparing them, and two maps at two scales is a comparison of two drawings rather than
+  // of two pieces of ground. Smaller when paired so the pair fits one screen.
+  const paired = round.withOriginal || reviewing;
+  const card = `aspect-square w-full shrink rounded-lg border border-line ${
+    paired ? 'max-w-[min(40vh,20rem)]' : 'max-w-[min(52vh,24rem)]'
+  }`;
+
   return (
-    <div className="flex flex-1 flex-col items-center gap-2">
+    <div className="flex flex-1 flex-col items-center justify-center gap-2">
       {!reviewing && (
         <div className="h-1 w-full shrink-0 overflow-hidden rounded-full bg-ink-soft" aria-hidden>
           <div
@@ -77,13 +85,13 @@ export default function Play({
         tolerance={round.tolerance}
         review={reviewing ? { targets: round.targets, found } : null}
         onTap={reviewing ? null : (at) => dispatch({ type: 'tap', at })}
-        className="aspect-square w-full max-w-[min(52vh,24rem)] shrink rounded-lg border border-line"
+        className={card}
       />
 
       {/* The original: an aid at the bottom of the ladder, where the round asks for one
           change and the question is what "different" even means — and then again in every
           reveal, because a change is only legible against what was there. */}
-      {(round.withOriginal || reviewing) && (
+      {paired && (
         <>
           <p className="m-0 text-center text-xs text-muted">The map as it was</p>
           <Card
@@ -91,7 +99,7 @@ export default function Play({
             crop={round.crop}
             taps={[]}
             tolerance={round.tolerance}
-            className="aspect-square w-full max-w-[min(36vh,16rem)] shrink rounded-lg border border-line"
+            className={card}
           />
         </>
       )}
