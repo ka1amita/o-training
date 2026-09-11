@@ -236,6 +236,31 @@ describe('sites on an area', () => {
   });
 });
 
+describe('the impassable things', () => {
+  it('are sites at their edge or their foot, like anything else', () => {
+    // `barrier` is a route cost and `barrierStrict` is a sprint rule, and neither is asked
+    // here or anywhere in this drill: a control at the foot of an impassable cliff or at
+    // the corner of a building is ordinary in both disciplines. The four that carry the
+    // flag on a forest map, each drawn as what it is.
+    const cases: [IsomCode, ControlKind, Feature][] = [
+      ['201', 'cliff', line('201', [{ x: 60, y: 150 }, { x: 150, y: 150 }, { x: 220, y: 90 }])],
+      ['515', 'wall', line('515', [{ x: 60, y: 150 }, { x: 150, y: 150 }, { x: 220, y: 90 }])],
+      ['521', 'building', area('521', box(115, 115, 70, 70))],
+      ['301', 'pond', area('301', box(115, 115, 70, 70))],
+    ];
+    for (const [code, word, feature] of cases) {
+      expect(semanticsOf(code)?.barrierStrict, code).toBe(true);
+      const sites = sitesOf(ground({ features: [feature] }), WHOLE, RADIUS);
+      expect(sites.length, code).toBeGreaterThan(0);
+      expect(new Set(sites.map((s) => s.kind)), code).toEqual(new Set([word]));
+      // On the thing itself, never in the middle of it.
+      for (const site of sites) {
+        expect(clearanceFrom({ shape: site.shape, reach: 0 }, site.at)).toBeLessThan(0.001);
+      }
+    }
+  });
+});
+
 describe('sites on a point', () => {
   it('keeps the whole circle on the card', () => {
     expect(kindsOf(ground({ features: [at('204', 8, 150), at('417', 150, 150)] })))
