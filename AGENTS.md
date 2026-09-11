@@ -766,3 +766,58 @@ dohledavka** above still holds except where this says otherwise.
   map shared a mean 55% of their ground, and the same boulder drawn twice can be matched by
   where it is rather than by what it is. Neither touches a generated round — the generator
   makes a new map for every pick — so no golden moved for either.
+
+## Map vs. reality
+
+The discrepancy drill — `src/drills/mapDiff/`. Package F of the plan in
+`docs/real-maps-architecture.md`, and decision D2's second half: the same enrichment that
+makes a thin window worth a card here makes it worth a question.
+
+- **The edits are the answer key, and the card is made from them.** A round holds the
+  **base** — the window the provider handed over, real, generated or adjusted, all fine —
+  and the edit list; `Play` draws `applyEdits(base, edits)` and nothing else ever does.
+  `score` counts taps against the discs the round carries. That is the one rule in a drill
+  whose whole subject is two drawings, and it is the reason the drill can be written at
+  all: "what is different" is a question about pixels only if you let it be.
+- **The tap tolerance and disjoint footprints are the one-answer invariant.** A tap finds a
+  change inside `footprintOf(base, edit).radius + tolerance`, and the round is well formed
+  only if no two of those widened discs meet — `dist > rᵢ + rⱼ + 2·tolerance`, which is
+  exactly the condition under which no point lies in both. `keepDisjoint` enforces it while
+  the round is made and `wellFormed` asserts it afterwards; `targetAt` takes the nearest
+  anyway, so a malformed round degrades instead of lying. Measured the other way round too,
+  because algebra asked about itself proves nothing: a 121 × 121 lattice of taps over 240
+  rounds on three kinds of ground, worst number of targets one tap landed in — **1**.
+- **A target is a place, not a region.** A removed area can be eighty metres across, and a
+  disc that size is not somewhere to point at, it is the card: every tap finds it and the
+  round stops asking anything. A change wider than a fifth of the card is dropped from the
+  round — the card still shows it, it simply is not what is being asked about.
+- **The budget asks for more than the round keeps.** A fifth of what `proposeEnrichment`
+  proposes is thrown away by those two rules (39 clashes and 13 oversized of 200 at level
+  10 on generated ground), and every budget slot itself is spent. Without the headroom a
+  level asking for five changes delivered 3.77 and the ladder was describing rounds that
+  did not exist. With it: k = 1.00 / 2.98 / 4.78 generated, 1.00 / 3.00 / 4.95 on the
+  forest sample, 1.00 / 2.95 / 5.00 adjusted, at levels 1 / 5 / 10.
+- **The word for a change is `wordFor(code)` and what happened to it.** "new boulder",
+  "marsh gone", "boulder moved", "boulder drawn as knoll" — one vocabulary with Mapova
+  dohledavka, which asks the same question the other way round ("what is in this circle"),
+  so a player who learns a word in one drill has it in the other. A code the answer space
+  cannot name has no word for a player either, and falls back to "feature"; over 240 rounds
+  on three grounds, 68 distinct words and not one fallback.
+- **The round has as many taps as it has changes, and none of them is marked.** A verdict
+  on the card while playing would let a player feel their way to a change by tapping around
+  it rather than by reading the map. With the taps counted and nothing marked, a tapper who
+  has no idea scores 0.0 / 3.4 / 9.4% of the changes on generated ground and 0 rounds
+  passed out of 240 — passing is three quarters of them. A second tap on a change already
+  found costs nothing, as tapping one wrong kind twice costs nothing in Mapova dohledavka.
+- **Never a pixel, and the pointer crosses in the safe direction.** `Card` turns a pointer
+  into metres of ground with the one line a square element over a square window allows, and
+  hands *that* to `state.ts`. A question may be made of screen coordinates; an answer may
+  not.
+- **On a picture the vocabulary narrows itself.** `proposeRemoval` and `proposeSwap` both
+  draw from `features`, which a raster map has none of — its blobs live in
+  `analysis.moveable` because the image already draws them — so only adds and moves are
+  ever proposed there, which is exactly the pair the renderer can show. Nothing in the
+  drill says so; it falls out of where a picture keeps its things, and a test pins it.
+- **The original is an aid at the bottom of the ladder and part of every reveal**, and
+  both cards are then the **same size**. Drawn smaller, the same boulder is two sizes in the
+  two pictures and the comparison is between two drawings rather than two pieces of ground.

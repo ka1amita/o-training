@@ -1357,3 +1357,125 @@ a drill about distinctive trees.
 "a path junction that is not there any more", "a new boulder", "the thicket edge moved".
 `sitesOf` returns `where` and `shape` on every site, so a discrepancy drill can say which
 part of which object it is talking about without a second table.
+
+## Package F — the discrepancy drill, and where it departs from §3.4 and §5.3
+
+Decision D2's second half and the last package of the plan. Package D built
+`proposeEnrichment` to make a thin surveyed window worth a card; this asks the window what
+was done to it. `src/drills/mapDiff/`, one line in the registry, one new window list in the
+bundle.
+
+### The round, and why it is not a picture comparison
+
+A round is a **base** — one window from `ctx.maps.pick`, real, generated or already
+adjusted — plus the edit list `proposeEnrichment` proposed on it. `Play` draws
+`applyEdits(base, edits)`; the player taps where that card disagrees with the base, and
+`score` counts the taps against `footprintOf(base, edit)`. Nothing compares two drawings,
+which is §0's one rule holding in the one drill whose subject is two drawings.
+
+That is the whole of the design, and everything below is the geometry it needs.
+
+### One tap, one answer, as a distance
+
+Mapová dohledávka's version of the invariant is combinatorial: one nameable word to a ring.
+Here it is geometric. A tap finds a change when it is inside the change's own reach plus a
+**tolerance** of a twentieth of the card — 9 m on the 180 m card, about a finger on a phone
+— and a tap could answer two changes at once exactly when
+
+    dist(aᵢ, aⱼ) ≤ rᵢ + rⱼ + 2·tolerance
+
+So `keepDisjoint` refuses the later of any such pair while the round is made, and
+`wellFormed` asserts the negation of it afterwards. The tolerance does **not** move with the
+level: what a level scales is how many changes there are and how long there is to find
+them, not how accurately they have to be pointed at, and a tolerance that shrank would be
+testing the touchscreen.
+
+Both halves are measured, because a test that asks the algebra about itself would not catch
+the algebra being wrong. A 121 × 121 lattice of taps is fired at every round of every
+ground, and the worst number of targets any one of them lands in, over 240 rounds: 1.
+
+Two more rules fall out of the same question:
+
+- **A target is a place, not a region.** A removed area can be eighty metres across, and a
+  disc that size is not somewhere to point at — any tap finds it. A change whose footprint
+  is more than a fifth of the card is dropped from the round; the card still shows it.
+- **A target is on the card.** `difference().visible` (§3.4) is the position test, and it
+  is asked of every edit separately, against the base, at the round's own window.
+
+### The budget asks for more than the round keeps
+
+Those two rules throw away about a fifth of what is proposed — at level 10 on generated
+ground, 39 of 200 clashed and 13 were oversized — while `proposeEnrichment` itself spends
+every slot it is given, 200 of 200. So `budgetFor` asks for `k(level)` plus **half again**
+and `keepDisjoint` stops at `k`. Before the headroom a level asking for five changes
+delivered 3.77 of them, which is the ladder describing rounds that do not exist.
+
+`k` is 1 at level 1 and 5 at level 10, and the mix is half adds — the operation that can
+always be placed, since a window with nothing on it still has ground to stand a boulder on
+— then moves, removes and swaps in that order, so a full card asks all four.
+
+| ground | k at 1 | 5 | 10 | least seen |
+|---|---|---|---|---|
+| generated, 40 seeds | 1.00 | 2.98 | 4.78 | 1 / 2 / 3 |
+| forest sample, 20 seeds | 1.00 | 3.00 | 4.95 | 1 / 3 / 4 |
+| adjusted forest sample, 20 seeds | 1.00 | 2.95 | 5.00 | 1 / 2 / 5 |
+
+Well formed in all 240, plus 120 fast-check runs over the whole ladder.
+
+### The score is a measurement, not a lottery
+
+The round has exactly `k` taps — plus a "Nothing else" and a clock that falls from 25 s a
+change to 12 s — and **nothing is marked while it is played**. A verdict on the card would
+let a player feel their way to a change by tapping around it rather than by reading the map,
+which is a different skill and not the one being trained. Hits over `k`, passed at
+`ceil(0.75k)`.
+
+A tapper with no idea where to look, `k` taps thrown uniformly at the card and scored as the
+drill scores them: 0.0 / 3.4 / 9.4 % of the changes on generated ground, 0.0 / 6.7 / 15.2 %
+on the forest sample, 0.0 / 5.1 / 13.0 % adjusted — and **0 rounds passed out of 240**.
+
+### Naming what changed (§ *What package F can borrow*, spent)
+
+`wordFor(code)` and `CONTROL_NAMES` are package B's vocabulary and this drill takes them
+whole: "new boulder", "marsh gone", "boulder moved", "boulder drawn as knoll". One
+vocabulary for the two drills, which ask the same question from opposite ends — what is in
+this circle, and what is not as it was — so a word learnt in one is a word in the other. A
+`controlSite` code has a word by construction; over 240 rounds there are 68 distinct ones
+and none of them fell back to the family "feature".
+
+`SiteClass` and `sitesOf`'s `where` were the other half of the offer and are **not** taken.
+The thing that changed here is an edit, not a site: an edit already names the feature it
+touched and what it did to it, and asking `sitesOf` which part of a line a change landed on
+would be a second answer to a question the edit has already answered.
+
+### The raster tier, again (§5.3, §*The raster tier* of package D)
+
+On a picture the vocabulary narrows itself, and nothing in the drill arranges that:
+`proposeRemoval` and `proposeSwap` both draw from `features`, which an image-only map has
+none of — its blobs are in `analysis.moveable` because the picture already draws them — so
+only adds and moves are ever proposed. Which is exactly the pair the renderer can show: an
+add is a symbol over the image and a move is the cut-and-paste of §3, patch and all. A test
+asserts the narrowing over 24 rounds rather than leaving it to be inferred.
+
+### The bundle, and a window list that is a copy of another one
+
+`libraryRequirements()` is derived from the drills, so a fifth drill is a sixteenth entry
+and a re-import: `s300.c180`, fifteen windows. Diffed key by key, **`id` and `windows` are
+the only things that changed** and no existing window list moved a crop.
+
+`s300.c180` holds exactly the crops `s300.c150` does, because `scoreWindow` reads a
+requirement's `size` and never its `crop` — the sub-window is drawn by `LibraryProvider.pick`
+out of whichever window it was handed. The two ids stay apart all the same, because
+`requirementId` names **what was asked for** rather than what came back: a scorer that one
+day did read `crop` would otherwise hand this drill a list scored for a card half its size,
+and nothing in the bundle would say so.
+
+### What the reveal shows (§9, applied)
+
+`review: true`, `onDone` on the round's last tap, and in `phase: 'review'` the card carries
+every change as a ring at its true tap disc — solid and ticked where it was found, dashed
+and crossed where it was not — with the original beside it and the list of words under it.
+The original is also an **aid** at levels 1 and 2, where the round asks for one change and
+the question is what "different" even means; both cards are then the same size, because the
+same boulder drawn at two sizes is a comparison of two drawings rather than of two pieces
+of ground.
